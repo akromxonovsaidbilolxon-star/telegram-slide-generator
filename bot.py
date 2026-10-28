@@ -43,9 +43,9 @@ async def process_language(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(language=lang_code)
 
     messages = {
-        "uz": "✅ O'zbek tili tanlandi.\n\nEndi taqdimot mavzusini yuboring (masalan: *Sun'iy intellekt kelajagi*):",
+        "uz": "✅ O'zbek tili tanlandi.\n\nEndi taqdimot mavzusini yuboring (masalan: *Sun'iy intellekt logistika sohasida*):",
         "ru": "✅ Выбран русский язык.\n\nТеперь отправьте тему презентации (например: *Будущее искусственного интеллекта*):",
-        "en": "✅ English selected.\n\nNow send the presentation topic (e.g., *Future of Artificial Intelligence*):"
+        "en": "✅ English selected.\n\nNow send the presentation topic (e.g., *Autonomous AI Systems*):"
     }
 
     await callback.message.edit_text(messages.get(lang_code, messages["uz"]), parse_mode="Markdown")
@@ -59,24 +59,23 @@ async def process_topic(message: types.Message, state: FSMContext):
     topic = message.text.strip()
 
     wait_messages = {
-        "uz": "⏳ Taqdimot va rasmlar tayyorlanmoqda, 15-20 soniya kuting...",
-        "ru": "⏳ Создаем презентацию и подбираем изображения, подождите 15-20 секунд...",
-        "en": "⏳ Generating presentation and fetching visuals, please wait 15-20 seconds..."
+        "uz": "⏳ Taqdimot, kartochkalar va rasmlar tayyorlanmoqda, iltimos kuting...",
+        "ru": "⏳ Создаем слайды, подбираем графику и карточки, подождите немного...",
+        "en": "⏳ Generating executive slides, visuals, and metrics, please wait..."
     }
     status_msg = await message.answer(wait_messages.get(language, wait_messages["uz"]))
 
     temp_path = f"pres_{message.from_user.id}.pptx"
 
     try:
-        # Generate rich presentation and build pptx
         plan = generate_presentation_json(topic=topic, slide_count=6, language=language)
         create_pptx_file(plan, temp_path)
 
-        doc = FSInputFile(temp_path, filename=f"{topic[:25]}.pptx")
+        doc = FSInputFile(temp_path, filename=f"{topic[:25].replace(' ', '_')}.pptx")
         captions = {
-            "uz": f"✅ *{plan.topic}* bo'yicha taqdimot tayyor!\nYangi taqdimot uchun /start ni bosing.",
-            "ru": f"✅ Презентация на тему *{plan.topic}* готова!\nДля новой презентации нажмите /start.",
-            "en": f"✅ Presentation on *{plan.topic}* is ready!\nPress /start for a new presentation."
+            "uz": f"✅ *{plan.topic}* bo'yicha professional taqdimot tayyor!\n\nYangi slayd yaratish uchun /start ni bosing.",
+            "ru": f"✅ Презентация *{plan.topic}* готова!\n\nДля создания новой нажмите /start.",
+            "en": f"✅ Presentation *{plan.topic}* is ready!\n\nTo make a new one, send /start."
         }
         await message.answer_document(
             document=doc,
