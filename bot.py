@@ -5,42 +5,46 @@ from aiogram.filters import CommandStart
 from aiogram.types import FSInputFile
 from pptx_generator import generate_presentation_json, create_pptx_file
 
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-bot = Bot(token=BOT_TOKEN)
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message):
+async def start_handler(message: types.Message):
     await message.answer(
-        "Assalomu alaykum! Menga taqdimot mavzusini yuboring, "
-        "men sizga PowerPoint (.pptx) faylini tayyorlab beraman."
+        "👋 Assalomu alaykum!\n\n"
+        "Menga taqdimot mavzusini yuboring (masalan: *Logistika haqida*), "
+        "men sizga tayyor PowerPoint (.pptx) faylini yaratib beraman.",
+        parse_mode="Markdown"
     )
 
 @dp.message()
-async def generate_slides_handler(message: types.Message):
+async def topic_handler(message: types.Message):
     topic = message.text.strip()
-    status_msg = await message.answer("Taqdimot tayyorlanmoqda, iltimos kuting...")
+    status_msg = await message.answer("⏳ Taqdimot tayyorlanmoqda, 10-15 soniya kuting...")
 
-    user_id = message.from_user.id
-    file_path = f"presentation_{user_id}.pptx"
+    temp_path = f"pres_{message.from_user.id}.pptx"
 
     try:
-        # 1. Ask Gemini to structure the presentation
+        # Генерация плана через Gemini и создание файла
         plan = generate_presentation_json(topic=topic, slide_count=6, language="O'zbek")
-        
-        # 2. Build PPTX
-        create_pptx_file(plan, file_path)
+        create_pptx_file(plan, temp_path)
 
-        # 3. Send back to user
-        doc = FSInputFile(file_path, filename=f"{topic[:20]}_taqdimot.pptx")
-        await message.answer_document(document=doc, caption=f"✅ {plan.topic} bo'yicha taqdimot tayyor!")
-    except Exception as e:
-        await message.answer(f"Xatolik yuz berdi: {str(e)}")
+        document = FSInputFile(temp_path, filename=f"{topic[:25]}.pptx")
+        await message.answer_document(
+            document=document,
+            caption=f"✅ *{plan.topic}* bo'yicha taqdimot tayyor!",
+            parse_mode="Markdown"
+        )
+    except Exception as err:
+        await message.answer(f"❌ Xatolik yuz berdi: {str(err)}")
     finally:
-        # Clean up temporary local file
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        await status_msg.delete()
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
 
 async def main():
     await dp.start_polling(bot, drop_pending_updates=True)
