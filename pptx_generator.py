@@ -7,6 +7,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pydantic import BaseModel, Field
 
+# Схема структуры слайда для Pydantic
 class SlideItem(BaseModel):
     slide_number: int
     layout_type: str = Field(description="title, content_with_bullets, or conclusion")
@@ -15,6 +16,7 @@ class SlideItem(BaseModel):
     bullet_points: list[str] = []
     speaker_notes: str | None = None
 
+# Схема всей презентации
 class PresentationPlan(BaseModel):
     topic: str
     language: str
@@ -32,8 +34,9 @@ def generate_presentation_json(topic: str, slide_count: int = 6, language: str =
 
     prompt = f"Mavzu: {topic}\nSlaydlar soni: {slide_count}\nTil: {language}"
 
+    # Используем актуальную модель gemini-3.8-flash
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
@@ -46,18 +49,19 @@ def generate_presentation_json(topic: str, slide_count: int = 6, language: str =
 
 def create_pptx_file(plan: PresentationPlan, output_path: str = "output.pptx") -> str:
     prs = Presentation()
-    prs.slide_width = Inches(13.333)
+    prs.slide_width = Inches(13.333)  # Соотношение 16:9
     prs.slide_height = Inches(7.5)
 
-    COLOR_PRIMARY = RGBColor(24, 43, 73)
-    COLOR_ACCENT = RGBColor(0, 150, 136)
-    COLOR_TEXT = RGBColor(40, 40, 40)
+    COLOR_PRIMARY = RGBColor(24, 43, 73)      # Темно-синий
+    COLOR_ACCENT = RGBColor(0, 150, 136)      # Бирюзовый
+    COLOR_TEXT = RGBColor(40, 40, 40)         # Графитовый темный
 
     blank_layout = prs.slide_layouts[6]
 
     for slide_data in plan.slides:
         slide = prs.slides.add_slide(blank_layout)
 
+        # Титульный слайд
         if slide_data.layout_type == "title":
             box = slide.shapes.add_textbox(Inches(1.5), Inches(2.2), Inches(10.33), Inches(3.2))
             tf = box.text_frame
@@ -77,6 +81,8 @@ def create_pptx_file(plan: PresentationPlan, output_path: str = "output.pptx") -
                 p2.font.color.rgb = COLOR_ACCENT
                 p2.alignment = PP_ALIGN.CENTER
                 p2.space_before = Pt(20)
+
+        # Контентный слайд
         else:
             hdr_box = slide.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.33), Inches(1.2))
             htf = hdr_box.text_frame
