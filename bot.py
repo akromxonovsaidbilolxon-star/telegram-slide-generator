@@ -5,7 +5,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
-from pptx_generator import generate_presentation_json, create_pptx_file
+from pptx_generator import generate_presentation_json, create_pptx_file, generate_preview_card
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = Bot(token=TOKEN)
@@ -13,18 +13,41 @@ dp = Dispatcher()
 
 class Form(StatesGroup):
     choosing_language = State()
+    choosing_theme = State()
+    choosing_count = State()
     entering_topic = State()
 
-def get_language_keyboard() -> InlineKeyboardMarkup:
-    buttons = [
+# ----------------- KEYBOARDS -----------------
+def get_language_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🇺🇿 O'zbekcha", callback_data="lang_uz"),
             InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru"),
             InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en"),
         ]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    ])
 
+def get_theme_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🌌 Midnight Executive", callback_data="theme_midnight"),
+            InlineKeyboardButton(text="🌲 Emerald Growth", callback_data="theme_emerald"),
+        ],
+        [
+            InlineKeyboardButton(text="📄 Modern Minimalist", callback_data="theme_minimal")
+        ]
+    ])
+
+def get_count_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="5 ta slayd", callback_data="count_5"),
+            InlineKeyboardButton(text="8 ta slayd", callback_data="count_8"),
+            InlineKeyboardButton(text="10 ta slayd", callback_data="count_10"),
+        ]
+    ])
+
+# ----------------- HANDLERS -----------------
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -33,7 +56,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         "Taqdimot tilini tanlang:\n"
         "Выберите язык презентации:\n"
         "Select presentation language:",
-        reply_markup=get_language_keyboard()
+        reply_markup=get_language_kb()
     )
     await state.set_state(Form.choosing_language)
 
@@ -42,13 +65,44 @@ async def process_language(callback: types.CallbackQuery, state: FSMContext):
     lang_code = callback.data.split("_")[1]
     await state.update_data(language=lang_code)
 
-    messages = {
-        "uz": "✅ O'zbek tili tanlandi.\n\nEndi taqdimot mavzusini yuboring (masalan: *Sun'iy intellekt logistika sohasida*):",
-        "ru": "✅ Выбран русский язык.\n\nТеперь отправьте тему презентации (например: *Будущее искусственного интеллекта*):",
-        "en": "✅ English selected.\n\nNow send the presentation topic (e.g., *Autonomous AI Systems*):"
+    captions = {
+        "uz": "🎨 Taqdimot dizayn uslubini (Theme) tanlang:",
+        "ru": "🎨 Выберите визуальный стиль (тему) презентации:",
+        "en": "🎨 Select the presentation design theme:"
     }
+    await callback.message.edit_text(captions.get(lang_code, captions["uz"]), reply_markup=get_theme_kb())
+    await state.set_state(Form.choosing_theme)
+    await callback.answer()
 
-    await callback.message.edit_text(messages.get(lang_code, messages["uz"]), parse_mode="Markdown")
+@dp.callback_query(Form.choosing_theme, F.data.startswith("theme_"))
+async def process_theme(callback: types.CallbackQuery, state: FSMContext):
+    theme_code = callback.data.split("_")[1]
+    await state.update_data(theme=theme_code)
+    user_data = await state.get_data()
+    lang = user_data.get("language", "uz")
+
+    captions = {
+        "uz": "📊 Slaydlar sonini tanlang:",
+        "ru": "📊 Выберите количество слайдов:",
+        "en": "📊 Select total number of slides:"
+    }
+    await callback.message.edit_text(captions.get(lang, captions["uz"]), reply_markup=get_count_kb())
+    await state.set_state(Form.choosing_count)
+    await callback.answer()
+
+@dp.callback_query(Form.choosing_count, F.data.startswith("count_"))
+async def process_count(callback: types.CallbackQuery, state: FSMContext):
+    count = int(callback.data.split("_")[1])
+    await state.update_data(slide_count=count)
+    user_data = await state.get_data()
+    lang = user_data.get("language", "uz")
+
+    messages = {
+        "uz": f"✅ {count} ta slayd tanlandi.\n\nEndi taqdimot mavzusini yozib yuboring (masalan: *Sun'iy intellektning transport sohasidagi o'rni*):",
+        "ru": f"✅ Выбрано {count} слайдов.\n\nТеперь введите тему презентации (например: *Роль искусственного интеллекта в логистике*):",
+        "en": f"✅ {count} slides selected.\n\nNow enter your presentation topic (e.g.: *AI Transformation in Logistics*):"
+    }
+    await callback.message.edit_text(messages.get(lang, messages["uz"]), parse_mode="Markdown")
     await state.set_state(Form.entering_topic)
     await callback.answer()
 
@@ -56,37 +110,56 @@ async def process_language(callback: types.CallbackQuery, state: FSMContext):
 async def process_topic(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     language = user_data.get("language", "uz")
+    theme = user_data.get("theme", "midnight")
+    slide_count = user_data.get("slide_count", 6)
     topic = message.text.strip()
 
     wait_messages = {
-        "uz": "⏳ Taqdimot, kartochkalar va rasmlar tayyorlanmoqda, iltimos kuting...",
-        "ru": "⏳ Создаем слайды, подбираем графику и карточки, подождите немного...",
-        "en": "⏳ Generating executive slides, visuals, and metrics, please wait..."
+        "uz": "⏳ Masterpiece taqdimot, infografika va rasmlar yaratilmoqda...",
+        "ru": "⏳ Создаем слайды высокого уровня, инфографику и визуал...",
+        "en": "⏳ Crafting executive slides, bento grids, and imagery..."
     }
     status_msg = await message.answer(wait_messages.get(language, wait_messages["uz"]))
 
-    temp_path = f"pres_{message.from_user.id}.pptx"
+    uid = message.from_user.id
+    pptx_path = f"pres_{uid}.pptx"
+    preview_path = f"preview_{uid}.png"
 
     try:
-        plan = generate_presentation_json(topic=topic, slide_count=6, language=language)
-        create_pptx_file(plan, temp_path)
+        # 1. Generate Structured Content via Gemini
+        plan = generate_presentation_json(topic=topic, slide_count=slide_count, language=language, theme=theme)
 
-        doc = FSInputFile(temp_path, filename=f"{topic[:25].replace(' ', '_')}.pptx")
+        # 2. Build PPTX File
+        create_pptx_file(plan, pptx_path)
+
+        # 3. Generate Visual Teaser Card
+        generate_preview_card(plan, preview_path)
+
+        # 4. Send Visual Preview first
+        preview_file = FSInputFile(preview_path)
+        await message.answer_photo(
+            photo=preview_file,
+            caption=f"🎯 *{plan.topic}*\nUslub: *{theme.capitalize()}* | Slaydlar: *{len(plan.slides)} ta*",
+            parse_mode="Markdown"
+        )
+
+        # 5. Send PPTX Document
+        doc = FSInputFile(pptx_path, filename=f"{topic[:25].replace(' ', '_')}.pptx")
         captions = {
-            "uz": f"✅ *{plan.topic}* bo'yicha professional taqdimot tayyor!\n\nYangi slayd yaratish uchun /start ni bosing.",
-            "ru": f"✅ Презентация *{plan.topic}* готова!\n\nДля создания новой нажмите /start.",
-            "en": f"✅ Presentation *{plan.topic}* is ready!\n\nTo make a new one, send /start."
+            "uz": "✅ PowerPoint (.pptx) fayli tayyor!\nYangi slayd yaratish uchun /start ni bosing.",
+            "ru": "✅ Файл PowerPoint (.pptx) готов!\nДля новой презентации нажмите /start.",
+            "en": "✅ PowerPoint (.pptx) file is ready!\nTo create another, send /start."
         }
         await message.answer_document(
             document=doc,
-            caption=captions.get(language, captions["uz"]),
-            parse_mode="Markdown"
+            caption=captions.get(language, captions["uz"])
         )
     except Exception as err:
-        await message.answer(f"❌ Xatolik yuz berdi / Ошибка: {str(err)}")
+        await message.answer(f"❌ Xatolik yuz berdi: {str(err)}")
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        for p in [pptx_path, preview_path]:
+            if os.path.exists(p):
+                os.remove(p)
         try:
             await status_msg.delete()
         except Exception:
