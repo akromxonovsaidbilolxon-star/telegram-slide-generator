@@ -13,166 +13,167 @@ from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE
 from pydantic import BaseModel, Field
 
-# ----------------- DYNAMIC COLOR ENGINE -----------------
-# Generates distinct aesthetic palettes so every user deck looks unique
+# ----------------- THEMES & LUXURY PALETTES -----------------
 PALETTES = [
     {
-        "dark_bg": RGBColor(10, 15, 29),
-        "card_bg": RGBColor(248, 250, 252),
-        "card_border": RGBColor(226, 232, 240),
-        "primary": RGBColor(15, 23, 42),
-        "accent": RGBColor(2, 132, 199),         # Sapphire Cyan
-        "accent_light": RGBColor(224, 242, 254),
-        "muted": RGBColor(100, 116, 139),
-        "white": RGBColor(248, 250, 252)
+        "name": "Obsidian Cyan",
+        "dark_bg": RGBColor(7, 11, 20),
+        "card_bg": RGBColor(15, 23, 42),
+        "card_border": RGBColor(30, 41, 59),
+        "text_main": RGBColor(248, 250, 252),
+        "text_muted": RGBColor(148, 163, 184),
+        "accent": RGBColor(56, 189, 248),         # Sky 400
+        "accent_badge": RGBColor(3, 105, 161),
+        "pill_bg": RGBColor(12, 74, 110)
     },
     {
-        "dark_bg": RGBColor(15, 23, 42),
-        "card_bg": RGBColor(241, 245, 249),
-        "card_border": RGBColor(203, 213, 225),
-        "primary": RGBColor(30, 41, 59),
-        "accent": RGBColor(99, 102, 241),        # Indigo Violet
-        "accent_light": RGBColor(238, 242, 255),
-        "muted": RGBColor(100, 116, 139),
-        "white": RGBColor(255, 255, 255)
+        "name": "Deep Space Purple",
+        "dark_bg": RGBColor(11, 10, 26),
+        "card_bg": RGBColor(22, 19, 48),
+        "card_border": RGBColor(46, 38, 92),
+        "text_main": RGBColor(248, 250, 252),
+        "text_muted": RGBColor(165, 155, 209),
+        "accent": RGBColor(168, 85, 247),        # Purple 500
+        "accent_badge": RGBColor(107, 33, 168),
+        "pill_bg": RGBColor(88, 28, 135)
     },
     {
-        "dark_bg": RGBColor(6, 78, 59),
-        "card_bg": RGBColor(240, 253, 244),
-        "card_border": RGBColor(187, 247, 208),
-        "primary": RGBColor(6, 78, 59),
-        "accent": RGBColor(16, 185, 129),        # Emerald Mint
-        "accent_light": RGBColor(209, 250, 229),
-        "muted": RGBColor(75, 85, 99),
-        "white": RGBColor(255, 255, 255)
-    },
-    {
-        "dark_bg": RGBColor(24, 24, 27),
-        "card_bg": RGBColor(250, 250, 250),
-        "card_border": RGBColor(228, 228, 231),
-        "primary": RGBColor(24, 24, 27),
-        "accent": RGBColor(217, 119, 6),          # Executive Amber
-        "accent_light": RGBColor(254, 243, 199),
-        "muted": RGBColor(113, 113, 122),
-        "white": RGBColor(255, 255, 255)
+        "name": "Nordic Teal",
+        "dark_bg": RGBColor(6, 20, 24),
+        "card_bg": RGBColor(13, 37, 44),
+        "card_border": RGBColor(21, 58, 69),
+        "text_main": RGBColor(241, 245, 249),
+        "text_muted": RGBColor(148, 175, 185),
+        "accent": RGBColor(45, 212, 191),        # Teal 400
+        "accent_badge": RGBColor(15, 118, 110),
+        "pill_bg": RGBColor(19, 78, 74)
     }
 ]
 
-# ----------------- PYDANTIC SCHEMAS -----------------
-class MetricItem(BaseModel):
-    value: str = Field(description="Concrete number/stat, e.g., '69 ta', '20 km³', '85%'")
-    label: str = Field(description="Contextual description under the metric")
+# ----------------- PYDANTIC STRUCTURED SCHEMA -----------------
+class MetricBox(BaseModel):
+    value: str = Field(description="Display stat, e.g. '170M', '88%', '+78M', '$50B'")
+    title: str = Field(description="Bold short header, e.g. 'JOBS CREATED'")
+    desc: str = Field(description="Context note under the stat")
 
-class CardItem(BaseModel):
-    title: str = Field(description="Pillar name or core concept")
-    description: str = Field(description="Two clear sentences explaining the concept")
+class PillarCard(BaseModel):
+    number: str = Field(description="e.g., '01', '02', '03'")
+    title: str = Field(description="Headline e.g., 'AI AGENTS', 'MULTIMODAL AI'")
+    subtitle: str = Field(description="One-line summary")
+    desc: str = Field(description="2 sentences of crisp analytical context")
 
-class SlideStructure(BaseModel):
+class TimelineStep(BaseModel):
+    year: str = Field(description="e.g., 'NOW 2026', '2027-28', '2030'")
+    title: str = Field(description="Phase title")
+    desc: str = Field(description="Description of what happens")
+
+class SlideContent(BaseModel):
     slide_number: int
-    layout_type: str = Field(description="Must be one of: 'title', 'cards', 'split_image', 'metrics', 'comparison', 'closing'")
-    eyebrow: str = Field(description="Categorical uppercase tag")
-    title: str = Field(description="Punchy executive headline, max 45 chars")
+    layout_type: str = Field(description="One of: 'title', 'cards_grid', 'stats_row', 'timeline', 'split_image', 'visual_hero', 'closing'")
+    eyebrow: str = Field(description="Topic kicker, e.g., 'THE BIG PICTURE', 'REAL-WORLD APPLICATIONS'")
+    title: str = Field(description="Slide headline, e.g., 'FOUR MAJOR SHIFTS'")
     subtitle: str | None = None
-    bullet_points: list[str] = Field(default=[], description="Bullet points starting with bold capitalized concepts")
-    cards: list[CardItem] = Field(default=[], description="Cards for 'cards' or 'comparison' layouts")
-    metrics: list[MetricItem] = Field(default=[], description="3 metrics for 'metrics' layout")
-    key_takeaway: str | None = Field(default=None, description="One crisp takeaway sentence")
-    image_query_en: str | None = Field(default=None, description="2-3 simple generic English keywords for stock photo search. Example: 'water dam aerial', 'hydroelectric turbine', 'modern logistics warehouse'")
+    source_citation: str | None = Field(default=None, description="e.g., 'Source: Stanford HAI, AI Index 2026'")
+    bullet_points: list[str] = Field(default=[], description="Bullet points starting with bold action tags")
+    cards: list[PillarCard] = Field(default=[], description="Pillars for 'cards_grid'")
+    metrics: list[MetricBox] = Field(default=[], description="Stats for 'stats_row'")
+    timeline_steps: list[TimelineStep] = Field(default=[], description="Steps for 'timeline'")
+    takeaway_callout: str | None = Field(default=None, description="Key insight banner")
+    ai_image_prompt: str | None = Field(default=None, description="Descriptive prompt for 3D/cinematic photo generation, e.g., 'futuristic glowing neon brain over smart city at night, 8k, octane render'")
 
 class MasterpiecePresentation(BaseModel):
     topic: str
     language: str
     total_slides: int
-    slides: list[SlideStructure]
+    slides: list[SlideContent]
 
-# ----------------- IMAGE RETRIEVAL WITH FALLBACKS -----------------
-def fetch_photo(query_en: str | None, user_custom_image_bytes: bytes | None = None) -> io.BytesIO | None:
-    # 1. Prioritize user-uploaded picture if provided
-    if user_custom_image_bytes:
+# ----------------- AI IMAGE GENERATOR & SEARCH -----------------
+def generate_or_fetch_image(prompt_en: str | None, user_bytes: bytes | None = None) -> io.BytesIO | None:
+    """Combines user upload, AI text-to-image (Pollinations Flux), and Google Images fallback."""
+    if user_bytes:
         try:
-            return io.BytesIO(user_custom_image_bytes)
+            return io.BytesIO(user_bytes)
         except Exception:
             pass
 
-    if not query_en:
+    if not prompt_en:
         return None
 
-    # Clean English query
-    clean_q = " ".join(query_en.strip().replace("-", " ").split()[:3])
-    
-    # 2. Try Google Custom Search first
+    clean_prompt = prompt_en.strip().replace("\n", " ")
+
+    # 1. Generate via Pollinations.AI (Flux.1 model)
+    try:
+        encoded_prompt = urllib.parse.quote_plus(clean_prompt)
+        ai_img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&model=flux&nologo=true"
+        resp = requests.get(ai_img_url, timeout=12)
+        if resp.status_code == 200 and len(resp.content) > 5000:
+            bio = io.BytesIO(resp.content)
+            img = Image.open(bio)
+            img.verify()
+            bio.seek(0)
+            return bio
+    except Exception as e:
+        print(f"[AI Image Generation Warning]: {e}")
+
+    # 2. Fallback to Google Custom Search
     api_key = os.environ.get("GOOGLE_SEARCH_API_KEY")
     cx = os.environ.get("GOOGLE_CSE_ID")
     if api_key and cx:
-        url = "https://www.googleapis.com/customsearch/v1"
-        params = {
-            "key": api_key,
-            "cx": cx,
-            "q": clean_q,
-            "searchType": "image",
-            "num": 3,
-            "imgSize": "large",
-            "safe": "active"
-        }
         try:
-            resp = requests.get(url, params=params, timeout=8)
-            if resp.status_code == 200:
-                items = resp.json().get("items", [])
-                for item in items:
-                    img_url = item.get("link")
-                    if img_url:
-                        try:
-                            headers = {"User-Agent": "Mozilla/5.0"}
-                            img_resp = requests.get(img_url, headers=headers, timeout=6)
-                            if img_resp.status_code == 200 and len(img_resp.content) > 3000:
-                                img_io = io.BytesIO(img_resp.content)
-                                img = Image.open(img_io)
-                                img.verify()
-                                img_io.seek(0)
-                                return img_io
-                        except Exception:
-                            continue
-        except Exception as e:
-            print(f"[Google Image Error]: {e}")
-
-    # 3. Try Pixabay API Fallback
-    pixabay_key = os.environ.get("PIXABAY_API_KEY")
-    if pixabay_key:
-        try:
-            p_url = "https://pixabay.com/api/"
+            search_q = " ".join(clean_prompt.split()[:4])
+            url = "https://www.googleapis.com/customsearch/v1"
             params = {
-                "key": pixabay_key,
-                "q": clean_q,
+                "key": api_key,
+                "cx": cx,
+                "q": search_q,
+                "searchType": "image",
+                "num": 2,
+                "imgSize": "large",
+                "safe": "active"
+            }
+            res = requests.get(url, params=params, timeout=8)
+            if res.status_code == 200:
+                items = res.json().get("items", [])
+                for item in items:
+                    l = item.get("link")
+                    if l:
+                        ir = requests.get(l, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
+                        if ir.status_code == 200 and len(ir.content) > 4000:
+                            bio = io.BytesIO(ir.content)
+                            img = Image.open(bio)
+                            img.verify()
+                            bio.seek(0)
+                            return bio
+        except Exception as e:
+            print(f"[Google Search Fallback Error]: {e}")
+
+    # 3. Fallback to Pixabay
+    pix_key = os.environ.get("PIXABAY_API_KEY")
+    if pix_key:
+        try:
+            p_res = requests.get("https://pixabay.com/api/", params={
+                "key": pix_key,
+                "q": " ".join(clean_prompt.split()[:3]),
                 "image_type": "photo",
                 "orientation": "horizontal",
                 "per_page": 3
-            }
-            resp = requests.get(p_url, params=params, timeout=6)
-            if resp.status_code == 200:
-                hits = resp.json().get("hits", [])
+            }, timeout=6)
+            if p_res.status_code == 200:
+                hits = p_res.json().get("hits", [])
                 if hits:
-                    img_url = hits[0].get("webformatURL") or hits[0].get("largeImageURL")
-                    img_resp = requests.get(img_url, timeout=6)
-                    if img_resp.status_code == 200:
-                        return io.BytesIO(img_resp.content)
+                    u = hits[0].get("webformatURL")
+                    ir = requests.get(u, timeout=6)
+                    if ir.status_code == 200:
+                        return io.BytesIO(ir.content)
         except Exception as e:
-            print(f"[Pixabay Error]: {e}")
-
-    # 4. Ultimate Unsplash/Picsum Direct Photo Redirect
-    try:
-        url_seed = urllib.parse.quote_plus(clean_q)
-        direct_resp = requests.get(f"https://picsum.photos/seed/{url_seed}/800/600", timeout=6)
-        if direct_resp.status_code == 200 and len(direct_resp.content) > 3000:
-            return io.BytesIO(direct_resp.content)
-    except Exception:
-        pass
+            print(f"[Pixabay Fallback Error]: {e}")
 
     return None
 
-# ----------------- GEMINI GENERATION -----------------
+# ----------------- GEMINI CONTENT SYNTHESIZER -----------------
 def generate_presentation_json(
     topic: str,
-    slide_count: int = 6,
+    slide_count: int = 10,
     language: str = "uz",
     user_notes: str | None = None
 ) -> MasterpiecePresentation:
@@ -180,16 +181,16 @@ def generate_presentation_json(
     client = genai.Client(api_key=api_key)
 
     lang_map = {
-        "uz": "O'zbek tili (barcha matnlar, faktlar va xulosalar 100% ravon o'zbek tilida bo'lsin)",
-        "ru": "Русский язык (весь текст строго на русском языке)",
-        "en": "English language (executive consulting grade)"
+        "uz": "O'zbek tili (barcha matnlar, sarlavhalar va tahlillar 100% ravon o'zbek tilida bo'lsin)",
+        "ru": "Русский язык (весь контент, даты и термины строго на русском языке)",
+        "en": "English language (editorial executive presentation grade)"
     }
     target_language = lang_map.get(language, "O'zbek tili")
 
-    # Research Step using Google Search
+    # Step 1: Research with Google Search Grounding
     research_prompt = (
-        f"Search Google for accurate, up-to-date facts, real metrics, laws/decrees, and data on: '{topic}'. "
-        f"User custom details: {user_notes or 'None'}"
+        f"Search Google for real verified stats, authoritative reports (e.g. Stanford HAI, WEF, Gartner), "
+        f"dates, and exact projections for: '{topic}'. User notes: {user_notes or 'None'}"
     )
     try:
         search_res = client.models.generate_content(
@@ -205,24 +206,30 @@ def generate_presentation_json(
         print(f"[Search Warning]: {e}")
         research_context = ""
 
-    # Synthesis Step with Strict Length Enforcement
+    # Step 2: Structured Presentation Design
     system_instruction = (
-        f"You are a Senior Presentation Architect at McKinsey. "
-        f"You MUST generate EXACTLY {slide_count} slides in the 'slides' array. Not 6, not 8, but exactly {slide_count}. "
-        f"- Slide 1 MUST be layout_type 'title'.\n"
-        f"- Slide {slide_count} MUST be layout_type 'closing'.\n"
-        f"- All intermediary slides (slides 2 through {slide_count - 1}) must alternate dynamically among: "
-        f"'cards', 'split_image', 'metrics', and 'comparison'.\n"
-        f"CRITICAL: 'image_query_en' MUST ALWAYS BE 2-3 ENGLISH WORDS describing a generic stock photo "
-        f"(e.g., 'water reservoir dam', 'solar panels field', 'cargo ship harbor'). NEVER use non-English terms for image_query_en."
+        f"You are the Lead Art Director and Research Analyst who designed the Stanford & WEF Executive Deck. "
+        f"You MUST generate EXACTLY {slide_count} slides in the 'slides' array. "
+        f"Mandatory layout sequence for {slide_count} slides:\n"
+        f"- Slide 1: 'title'\n"
+        f"- Slide 2: 'cards_grid' (Why Now / 3-4 Key Pillars)\n"
+        f"- Slide 3: 'split_image' (Core shifts with bold keywords)\n"
+        f"- Slide 4: 'stats_row' (3 big numerical metrics with sources like WEF/Stanford)\n"
+        f"- Slide 5: 'timeline' (Phases / Next 5 years trajectory)\n"
+        f"- Slide 6: 'visual_hero' (High-impact visual concept slide)\n"
+        f"- Intermediary slides up to {slide_count - 1}: alternate among 'cards_grid', 'split_image', and 'stats_row'.\n"
+        f"- Slide {slide_count}: 'closing' (Strategic takeaway / References).\n\n"
+        f"CRITICAL: For every slide that uses an image ('split_image' and 'visual_hero'), "
+        f"'ai_image_prompt' MUST be a vivid English prompt for 3D/photorealistic AI generation "
+        f"(e.g., 'hyper-realistic humanoid robot working with futuristic holographic interface in hospital, cinematic lighting, 8k')."
     )
 
     synthesis_prompt = (
         f"Topic: {topic}\n"
-        f"Required Exact Slide Count: {slide_count}\n"
+        f"Exact Slides Count Needed: {slide_count}\n"
         f"Language: {target_language}\n"
-        f"User Custom Instructions: {user_notes or 'Standard high-level briefing'}\n\n"
-        f"Verified Facts Context:\n{research_context[:3500]}"
+        f"User Custom Instructions: {user_notes or 'Produce an executive deck'}\n\n"
+        f"Verified Facts & Source Context:\n{research_context[:3500]}"
     )
 
     response = client.models.generate_content(
@@ -237,7 +244,7 @@ def generate_presentation_json(
     )
     return response.parsed
 
-# ----------------- PPTX BUILDER -----------------
+# ----------------- POWERPOINT COMPILER -----------------
 def create_pptx_file(
     plan: MasterpiecePresentation,
     output_path: str = "output.pptx",
@@ -247,87 +254,91 @@ def create_pptx_file(
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
 
-    # Randomly select one of the luxury palettes for visual variety per user/deck
     theme = random.choice(PALETTES)
     blank_layout = prs.slide_layouts[6]
 
     for s in plan.slides:
         slide = prs.slides.add_slide(blank_layout)
 
-        # 1. TITLE SLIDE
-        if s.layout_type == "title":
-            bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(7.5))
-            bg.fill.solid()
-            bg.fill.fore_color.rgb = theme["dark_bg"]
-            bg.line.fill.background()
+        # Draw full dark background for every slide
+        bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(7.5))
+        bg.fill.solid()
+        bg.fill.fore_color.rgb = theme["dark_bg"]
+        bg.line.fill.background()
 
-            tb = slide.shapes.add_textbox(Inches(1.2), Inches(2.0), Inches(11.0), Inches(3.8))
+        # ---------------- 1. TITLE SLIDE ----------------
+        if s.layout_type == "title":
+            accent_bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.2), Inches(1.8), Inches(0.08), Inches(3.6))
+            accent_bar.fill.solid()
+            accent_bar.fill.fore_color.rgb = theme["accent"]
+            accent_bar.line.fill.background()
+
+            tb = slide.shapes.add_textbox(Inches(1.5), Inches(1.8), Inches(10.5), Inches(3.8))
             tf = tb.text_frame
             tf.word_wrap = True
 
             pe = tf.paragraphs[0]
-            pe.text = s.eyebrow.upper()
+            pe.text = f"{s.eyebrow.upper()}  •  2026"
             pe.font.size = Pt(13)
             pe.font.bold = True
             pe.font.color.rgb = theme["accent"]
-            pe.space_after = Pt(16)
+            pe.space_after = Pt(14)
 
             pt = tf.add_paragraph()
-            pt.text = s.title
-            pt.font.size = Pt(44)
+            pt.text = s.title.upper()
+            pt.font.size = Pt(46)
             pt.font.bold = True
-            pt.font.color.rgb = theme["white"]
+            pt.font.color.rgb = theme["text_main"]
             pt.space_after = Pt(18)
 
             if s.subtitle:
                 ps = tf.add_paragraph()
                 ps.text = s.subtitle
                 ps.font.size = Pt(20)
-                ps.font.color.rgb = theme["muted"]
+                ps.font.color.rgb = theme["text_muted"]
 
-            line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.2), Inches(5.8), Inches(1.2), Inches(0.06))
-            line.fill.solid()
-            line.fill.fore_color.rgb = theme["accent"]
-            line.line.fill.background()
+            # Number badge
+            badge = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(11.2), Inches(1.8), Inches(0.9), Inches(0.45))
+            badge.fill.solid()
+            badge.fill.fore_color.rgb = theme["pill_bg"]
+            badge.line.fill.background()
+            btf = badge.text_frame
+            bp = btf.paragraphs[0]
+            bp.text = "01"
+            bp.font.size = Pt(14)
+            bp.font.bold = True
+            bp.font.color.rgb = theme["accent"]
+            bp.alignment = PP_ALIGN.CENTER
             continue
 
-        # CLOSING SLIDE
-        if s.layout_type == "closing":
-            bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(7.5))
-            bg.fill.solid()
-            bg.fill.fore_color.rgb = theme["dark_bg"]
-            bg.line.fill.background()
+        # ---------------- 6. VISUAL HERO SLIDE (Full 16:9 Image + Overlay) ----------------
+        if s.layout_type == "visual_hero":
+            img_io = generate_or_fetch_image(s.ai_image_prompt or s.title, user_custom_image_bytes)
+            if img_io:
+                try:
+                    slide.shapes.add_picture(img_io, Inches(0.8), Inches(1.5), width=Inches(11.733), height=Inches(5.2))
+                except Exception:
+                    pass
 
-            tb = slide.shapes.add_textbox(Inches(1.5), Inches(2.0), Inches(10.3), Inches(3.5))
-            tf = tb.text_frame
-            tf.word_wrap = True
+            # Header on top
+            htb = slide.shapes.add_textbox(Inches(0.8), Inches(0.4), Inches(10.5), Inches(1.0))
+            htf = htb.text_frame
+            htf.word_wrap = True
+            p1 = htf.paragraphs[0]
+            p1.text = s.eyebrow.upper()
+            p1.font.size = Pt(11)
+            p1.font.bold = True
+            p1.font.color.rgb = theme["accent"]
 
-            pe = tf.paragraphs[0]
-            pe.text = s.eyebrow.upper()
-            pe.font.size = Pt(13)
-            pe.font.bold = True
-            pe.font.color.rgb = theme["accent"]
-            pe.alignment = PP_ALIGN.CENTER
-            pe.space_after = Pt(14)
-
-            pt = tf.add_paragraph()
-            pt.text = s.title
-            pt.font.size = Pt(38)
-            pt.font.bold = True
-            pt.font.color.rgb = theme["white"]
-            pt.alignment = PP_ALIGN.CENTER
-            pt.space_after = Pt(22)
-
-            if s.key_takeaway or s.subtitle:
-                ps = tf.add_paragraph()
-                ps.text = s.key_takeaway or s.subtitle
-                ps.font.size = Pt(18)
-                ps.font.color.rgb = theme["muted"]
-                ps.alignment = PP_ALIGN.CENTER
+            p2 = htf.add_paragraph()
+            p2.text = s.title
+            p2.font.size = Pt(26)
+            p2.font.bold = True
+            p2.font.color.rgb = theme["text_main"]
             continue
 
-        # CONTENT SLIDE HEADER
-        ht_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.5), Inches(11.7), Inches(1.2))
+        # ---------------- HEADER FOR ALL REMAINING SLIDES ----------------
+        ht_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.4), Inches(10.5), Inches(1.1))
         htf = ht_box.text_frame
         htf.word_wrap = True
 
@@ -341,46 +352,72 @@ def create_pptx_file(
         pt.text = s.title
         pt.font.size = Pt(28)
         pt.font.bold = True
-        pt.font.color.rgb = theme["primary"]
+        pt.font.color.rgb = theme["text_main"]
 
-        # 2. CARDS LAYOUT
-        if s.layout_type == "cards":
-            items = s.cards if s.cards else [CardItem(title=f"Aspekt {i+1}", description=b) for i, b in enumerate(s.bullet_points[:3])]
-            card_w = Inches(3.64)
-            card_h = Inches(3.8)
-            gap = Inches(0.39)
+        # Number badge on top right
+        nb = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(11.7), Inches(0.4), Inches(0.8), Inches(0.4))
+        nb.fill.solid()
+        nb.fill.fore_color.rgb = theme["pill_bg"]
+        nb.line.fill.background()
+        np = nb.text_frame.paragraphs[0]
+        np.text = f"{s.slide_number:02d}"
+        np.font.size = Pt(13)
+        np.font.bold = True
+        np.font.color.rgb = theme["accent"]
+        np.alignment = PP_ALIGN.CENTER
 
-            for i, card_data in enumerate(items[:3]):
-                cx = Inches(0.8) + i * (card_w + gap)
-                card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, cx, Inches(1.8), card_w, card_h)
+        # ---------------- 2. CARDS GRID (3-4 Bento Cards) ----------------
+        if s.layout_type == "cards_grid":
+            items = s.cards if s.cards else [
+                PillarCard(number=f"0{i+1}", title=f"Pillar {i+1}", subtitle="Core driver", desc=b) 
+                for i, b in enumerate(s.bullet_points[:4])
+            ]
+            num_cards = min(len(items), 4) or 3
+            card_w = Inches(11.733 / num_cards - 0.25)
+            card_h = Inches(4.3)
+            start_y = Inches(1.8)
+
+            for i, c in enumerate(items[:num_cards]):
+                cx = Inches(0.8) + i * (card_w + Inches(0.25))
+
+                card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, cx, start_y, card_w, card_h)
                 card.fill.solid()
                 card.fill.fore_color.rgb = theme["card_bg"]
                 card.line.color.rgb = theme["card_border"]
 
-                badge = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, cx + Inches(0.3), Inches(2.1), Inches(0.35), Inches(0.35))
-                badge.fill.solid()
-                badge.fill.fore_color.rgb = theme["accent_light"]
-                badge.line.fill.background()
-
-                ctb = slide.shapes.add_textbox(cx + Inches(0.3), Inches(2.6), card_w - Inches(0.6), card_h - Inches(1.0))
+                ctb = slide.shapes.add_textbox(cx + Inches(0.3), start_y + Inches(0.3), card_w - Inches(0.6), card_h - Inches(0.6))
                 ctf = ctb.text_frame
                 ctf.word_wrap = True
 
-                cp1 = ctf.paragraphs[0]
-                cp1.text = card_data.title
-                cp1.font.size = Pt(18)
-                cp1.font.bold = True
-                cp1.font.color.rgb = theme["primary"]
-                cp1.space_after = Pt(10)
+                p_num = ctf.paragraphs[0]
+                p_num.text = c.number
+                p_num.font.size = Pt(12)
+                p_num.font.bold = True
+                p_num.font.color.rgb = theme["accent"]
+                p_num.space_after = Pt(8)
 
-                cp2 = ctf.add_paragraph()
-                cp2.text = card_data.description
-                cp2.font.size = Pt(13)
-                cp2.font.color.rgb = theme["muted"]
+                p_title = ctf.add_paragraph()
+                p_title.text = c.title
+                p_title.font.size = Pt(18)
+                p_title.font.bold = True
+                p_title.font.color.rgb = theme["text_main"]
+                p_title.space_after = Pt(6)
 
-        # 3. SPLIT IMAGE LAYOUT
+                if c.subtitle:
+                    p_sub = ctf.add_paragraph()
+                    p_sub.text = c.subtitle
+                    p_sub.font.size = Pt(12)
+                    p_sub.font.color.rgb = theme["accent"]
+                    p_sub.space_after = Pt(10)
+
+                p_desc = ctf.add_paragraph()
+                p_desc.text = c.desc
+                p_desc.font.size = Pt(13)
+                p_desc.font.color.rgb = theme["text_muted"]
+
+        # ---------------- 3. SPLIT IMAGE LAYOUT ----------------
         elif s.layout_type == "split_image":
-            tb = slide.shapes.add_textbox(Inches(0.8), Inches(1.8), Inches(6.5), Inches(3.9))
+            tb = slide.shapes.add_textbox(Inches(0.8), Inches(1.8), Inches(6.0), Inches(4.3))
             tf = tb.text_frame
             tf.word_wrap = True
 
@@ -388,158 +425,175 @@ def create_pptx_file(
                 p = tf.paragraphs[0] if idx == 0 else tf.add_paragraph()
                 p.text = f"•  {pt_text}"
                 p.font.size = Pt(14)
-                p.font.color.rgb = theme["primary"]
-                p.space_after = Pt(14)
+                p.font.color.rgb = theme["text_main"]
+                p.space_after = Pt(16)
 
-            # Fetch image using English search query or user's custom photo
-            img_stream = fetch_photo(s.image_query_en, user_custom_image_bytes)
-            image_inserted = False
-
-            if img_stream:
+            # Insert Image
+            img_io = generate_or_fetch_image(s.ai_image_prompt or s.title, user_custom_image_bytes)
+            if img_io:
                 try:
-                    slide.shapes.add_picture(img_stream, Inches(7.6), Inches(1.8), width=Inches(4.9), height=Inches(3.8))
-                    image_inserted = True
-                except Exception as e:
-                    print(f"Failed to place image: {e}")
+                    slide.shapes.add_picture(img_io, Inches(7.2), Inches(1.8), width=Inches(5.3), height=Inches(4.3))
+                except Exception:
+                    pass
 
-            if not image_inserted:
-                fallback_card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(7.6), Inches(1.8), Inches(4.9), Inches(3.8))
-                fallback_card.fill.solid()
-                fallback_card.fill.fore_color.rgb = theme["card_bg"]
-                fallback_card.line.color.rgb = theme["accent"]
-
-                ftb = slide.shapes.add_textbox(Inches(7.8), Inches(3.0), Inches(4.5), Inches(1.5))
-                ftf = ftb.text_frame
-                ftf.word_wrap = True
-                fp = ftf.paragraphs[0]
-                fp.text = f"📊 {s.title}"
-                fp.font.size = Pt(18)
-                fp.font.bold = True
-                fp.font.color.rgb = theme["primary"]
-                fp.alignment = PP_ALIGN.CENTER
-
-        # 4. METRICS LAYOUT
-        elif s.layout_type == "metrics":
+        # ---------------- 4. STATS ROW ----------------
+        elif s.layout_type == "stats_row":
             m_items = s.metrics if s.metrics else [
-                MetricItem(value="85%", label="Samaradorlik"),
-                MetricItem(value="10x", label="Tezlashuv"),
-                MetricItem(value="Zero", label="Operatsion xatolar")
+                MetricBox(value="170M", title="JOBS CREATED", desc="Structural growth areas"),
+                MetricBox(value="92M", title="JOBS DISPLACED", desc="Routine tasks automation"),
+                MetricBox(value="+78M", title="NET IMPACT", desc="Positive workforce transformation")
             ]
-            m_w = Inches(3.64)
-            m_h = Inches(2.3)
-            gap = Inches(0.39)
+            box_w = Inches(3.65)
+            box_h = Inches(3.8)
 
             for i, m in enumerate(m_items[:3]):
-                mx = Inches(0.8) + i * (m_w + gap)
-                box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, mx, Inches(1.9), m_w, m_h)
+                mx = Inches(0.8) + i * (box_w + Inches(0.39))
+                box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, mx, Inches(1.8), box_w, box_h)
                 box.fill.solid()
                 box.fill.fore_color.rgb = theme["card_bg"]
                 box.line.color.rgb = theme["card_border"]
 
-                mtb = slide.shapes.add_textbox(mx + Inches(0.3), Inches(2.1), m_w - Inches(0.6), Inches(1.8))
-                mtf = mtb.text_frame
-                mtf.word_wrap = True
+                btb = slide.shapes.add_textbox(mx + Inches(0.3), Inches(2.2), box_w - Inches(0.6), box_h - Inches(0.8))
+                btf = btb.text_frame
+                btf.word_wrap = True
 
-                p_val = mtf.paragraphs[0]
-                p_val.text = m.value
-                p_val.font.size = Pt(40)
-                p_val.font.bold = True
-                p_val.font.color.rgb = theme["accent"] if i % 2 == 0 else theme["primary"]
-                p_val.space_after = Pt(8)
+                pv = btf.paragraphs[0]
+                pv.text = m.value
+                pv.font.size = Pt(52)
+                pv.font.bold = True
+                pv.font.color.rgb = theme["accent"] if i != 1 else theme["text_main"]
+                pv.space_after = Pt(12)
 
-                p_lbl = mtf.add_paragraph()
-                p_lbl.text = m.label
-                p_lbl.font.size = Pt(13)
-                p_lbl.font.color.rgb = theme["muted"]
+                ptit = btf.add_paragraph()
+                ptit.text = m.title
+                ptit.font.size = Pt(14)
+                ptit.font.bold = True
+                ptit.font.color.rgb = theme["text_main"]
+                ptit.space_after = Pt(8)
 
-        # 5. COMPARISON LAYOUT
-        elif s.layout_type == "comparison":
-            items = s.cards[:2] if len(s.cards) >= 2 else [
-                CardItem(title="Klassik Yondashuv", description="An'anaviy operatsion modellar va ularning cheklovlari."),
-                CardItem(title="Zamonaviy Yondashuv", description="Avtomatlashtirilgan raqamli boshqaruv tizimlari.")
+                pdec = btf.add_paragraph()
+                pdec.text = m.desc
+                pdec.font.size = Pt(12)
+                pdec.font.color.rgb = theme["text_muted"]
+
+        # ---------------- 5. TIMELINE / ROADMAP ----------------
+        elif s.layout_type == "timeline":
+            steps = s.timeline_steps if s.timeline_steps else [
+                TimelineStep(year="2026", title="AI Copilots", desc="Everyday assistance in software"),
+                TimelineStep(year="2027-28", title="Autonomous Agents", desc="Multi-step complex execution"),
+                TimelineStep(year="2030", title="Embodied Intelligence", desc="Robotics and smart city infrastructure")
             ]
-            c_w = Inches(5.6)
-            c_h = Inches(3.8)
-            gap = Inches(0.5)
+            t_w = Inches(3.65)
+            t_h = Inches(3.6)
 
-            for i, item in enumerate(items[:2]):
-                cx = Inches(0.8) + i * (c_w + gap)
-                card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, cx, Inches(1.8), c_w, c_h)
-                card.fill.solid()
-                card.fill.fore_color.rgb = theme["card_bg"]
-                card.line.color.rgb = theme["card_border"]
+            for i, st in enumerate(steps[:3]):
+                tx = Inches(0.8) + i * (t_w + Inches(0.39))
+                box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, tx, Inches(1.8), t_w, t_h)
+                box.fill.solid()
+                box.fill.fore_color.rgb = theme["card_bg"]
+                box.line.color.rgb = theme["card_border"]
 
-                ctb = slide.shapes.add_textbox(cx + Inches(0.4), Inches(2.1), c_w - Inches(0.8), c_h - Inches(0.6))
-                ctf = ctb.text_frame
-                ctf.word_wrap = True
+                ttb = slide.shapes.add_textbox(tx + Inches(0.3), Inches(2.1), t_w - Inches(0.6), t_h - Inches(0.6))
+                ttf = ttb.text_frame
+                ttf.word_wrap = True
 
-                cp1 = ctf.paragraphs[0]
-                cp1.text = item.title
-                cp1.font.size = Pt(20)
-                cp1.font.bold = True
-                cp1.font.color.rgb = theme["primary"]
-                cp1.space_after = Pt(12)
+                py = ttf.paragraphs[0]
+                py.text = st.year
+                py.font.size = Pt(13)
+                py.font.bold = True
+                py.font.color.rgb = theme["accent"]
+                py.space_after = Pt(10)
 
-                cp2 = ctf.add_paragraph()
-                cp2.text = item.description
-                cp2.font.size = Pt(14)
-                cp2.font.color.rgb = theme["muted"]
+                pt = ttf.add_paragraph()
+                pt.text = st.title
+                pt.font.size = Pt(18)
+                pt.font.bold = True
+                pt.font.color.rgb = theme["text_main"]
+                pt.space_after = Pt(10)
 
-        # BOTTOM TAKEAWAY CALLOUT
-        if s.key_takeaway:
-            banner = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.8), Inches(6.0), Inches(11.7), Inches(0.85))
-            banner.fill.solid()
-            banner.fill.fore_color.rgb = theme["accent_light"]
-            banner.line.color.rgb = theme["accent"]
+                pd = ttf.add_paragraph()
+                pd.text = st.desc
+                pd.font.size = Pt(13)
+                pd.font.color.rgb = theme["text_muted"]
 
-            btb = slide.shapes.add_textbox(Inches(1.0), Inches(6.05), Inches(11.3), Inches(0.75))
-            btf = btb.text_frame
-            btf.word_wrap = True
-            bp = btf.paragraphs[0]
-            bp.text = f"💡 {s.key_takeaway}"
-            bp.font.size = Pt(13)
-            bp.font.bold = True
-            bp.font.color.rgb = theme["accent"]
+        # ---------------- CLOSING SLIDE ----------------
+        elif s.layout_type == "closing":
+            box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.5), Inches(1.8), Inches(10.3), Inches(4.3))
+            box.fill.solid()
+            box.fill.fore_color.rgb = theme["card_bg"]
+            box.line.color.rgb = theme["card_border"]
+
+            ctb = slide.shapes.add_textbox(Inches(2.0), Inches(2.2), Inches(9.3), Inches(3.5))
+            ctf = ctb.text_frame
+            ctf.word_wrap = True
+
+            cp1 = ctf.paragraphs[0]
+            cp1.text = "STRATEGIC SYNTHESIS"
+            cp1.font.size = Pt(13)
+            cp1.font.bold = True
+            cp1.font.color.rgb = theme["accent"]
+            cp1.space_after = Pt(14)
+
+            cp2 = ctf.add_paragraph()
+            cp2.text = s.title.upper()
+            cp2.font.size = Pt(32)
+            cp2.font.bold = True
+            cp2.font.color.rgb = theme["text_main"]
+            cp2.space_after = Pt(16)
+
+            if s.subtitle or s.takeaway_callout:
+                cp3 = ctf.add_paragraph()
+                cp3.text = s.takeaway_callout or s.subtitle
+                cp3.font.size = Pt(16)
+                cp3.font.color.rgb = theme["text_muted"]
+
+        # Footer Source Citation
+        if s.source_citation:
+            fc = slide.shapes.add_textbox(Inches(0.8), Inches(6.8), Inches(11.7), Inches(0.4))
+            fp = fc.text_frame.paragraphs[0]
+            fp.text = s.source_citation
+            fp.font.size = Pt(10)
+            fp.font.color.rgb = theme["text_muted"]
 
     prs.save(output_path)
     return output_path
 
-# ----------------- SLIDE PREVIEW IMAGE GENERATOR -----------------
+# ----------------- TELEGRAM PREVIEW CARD -----------------
 def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = "preview.png") -> str:
     W, H = 1200, 675
-    img = Image.new("RGB", (W, H), color=(9, 13, 22))
+    img = Image.new("RGB", (W, H), color=(7, 11, 20))
     draw = ImageDraw.Draw(img)
 
-    draw.rectangle([(0, 0), (W, 10)], fill=(2, 132, 199))
+    draw.rectangle([(0, 0), (W, 10)], fill=(56, 189, 248))
 
     try:
-        font_large = ImageFont.truetype("DejaVuSans-Bold.ttf", 44)
-        font_sub = ImageFont.truetype("DejaVuSans.ttf", 22)
-        font_tag = ImageFont.truetype("DejaVuSans-Bold.ttf", 16)
+        font_large = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
+        font_sub = ImageFont.truetype("DejaVuSans.ttf", 20)
+        font_tag = ImageFont.truetype("DejaVuSans-Bold.ttf", 15)
     except Exception:
         font_large = ImageFont.load_default()
         font_sub = ImageFont.load_default()
         font_tag = ImageFont.load_default()
 
-    draw.text((70, 70), f"EXECUTIVE DECK ({len(plan.slides)} SLIDES)", fill=(2, 132, 199), font=font_tag)
+    draw.text((70, 65), f"EXECUTIVE SUITE  •  {len(plan.slides)} SLIDES READY", fill=(56, 189, 248), font=font_tag)
 
     title_text = plan.topic.upper()
-    if len(title_text) > 40:
-        title_text = title_text[:37] + "..."
-    draw.text((70, 110), title_text, fill=(248, 250, 252), font=font_large)
+    if len(title_text) > 42:
+        title_text = title_text[:39] + "..."
+    draw.text((70, 105), title_text, fill=(248, 250, 252), font=font_large)
 
-    card_w, card_h = 330, 360
-    y_card, gap = 220, 35
+    card_w, card_h = 330, 370
+    y_card, gap = 210, 35
 
     for i, s in enumerate(plan.slides[:3]):
         x_card = 70 + i * (card_w + gap)
-        draw.rounded_rectangle([(x_card, y_card), (x_card + card_w, y_card + card_h)], radius=12, fill=(18, 24, 38), outline=(30, 41, 59), width=2)
-        draw.rounded_rectangle([(x_card + 20, y_card + 20), (x_card + 80, y_card + 50)], radius=6, fill=(2, 132, 199))
-        draw.text((x_card + 30, y_card + 25), f"0{s.slide_number}", fill=(255, 255, 255), font=font_tag)
+        draw.rounded_rectangle([(x_card, y_card), (x_card + card_w, y_card + card_h)], radius=12, fill=(15, 23, 42), outline=(30, 41, 59), width=2)
+        draw.rounded_rectangle([(x_card + 20, y_card + 20), (x_card + 75, y_card + 50)], radius=6, fill=(3, 105, 161))
+        draw.text((x_card + 32, y_card + 25), f"{s.slide_number:02d}", fill=(255, 255, 255), font=font_tag)
 
-        s_title = s.title if len(s.title) < 28 else s.title[:25] + "..."
+        s_title = s.title if len(s.title) < 26 else s.title[:23] + "..."
         draw.text((x_card + 20, y_card + 75), s_title, fill=(248, 250, 252), font=font_tag)
-        draw.text((x_card + 20, y_card + 115), f"Layout: {s.layout_type.capitalize()}", fill=(100, 116, 139), font=font_sub)
+        draw.text((x_card + 20, y_card + 115), f"Layout: {s.layout_type}", fill=(148, 163, 184), font=font_sub)
 
     img.save(output_img_path)
     return output_img_path
