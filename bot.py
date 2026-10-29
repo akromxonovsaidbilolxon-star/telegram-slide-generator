@@ -30,8 +30,8 @@ def get_count_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="5 ta slayd", callback_data="count_5"),
-            InlineKeyboardButton(text="8 ta slayd", callback_data="count_8"),
             InlineKeyboardButton(text="10 ta slayd", callback_data="count_10"),
+            InlineKeyboardButton(text="16 ta slayd (Full)", callback_data="count_16"),
         ]
     ])
 
@@ -44,7 +44,7 @@ def get_skip_kb() -> InlineKeyboardMarkup:
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 Assalomu alaykum!\n\n"
+        "👋 Assalomu alaykum! / Здравствуйте! / Hello!\n\n"
         "Taqdimot tilini tanlang:\n"
         "Выберите язык презентации:\n"
         "Select presentation language:",
@@ -58,9 +58,9 @@ async def process_language(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(language=lang_code)
 
     captions = {
-        "uz": "📊 Slaydlar sonini tanlang:",
-        "ru": "📊 Выберите точное количество слайдов:",
-        "en": "📊 Select exact number of slides:"
+        "uz": "📊 Slaydlar sonini tanlang (10 yoki 16 ta to'liq slayd):",
+        "ru": "📊 Выберите точное количество слайдов (10 или 16 слайдов):",
+        "en": "📊 Select total number of slides (10 or 16 full deck):"
     }
     await callback.message.edit_text(captions.get(lang_code, captions["uz"]), reply_markup=get_count_kb())
     await state.set_state(Form.choosing_count)
@@ -75,7 +75,7 @@ async def process_count(callback: types.CallbackQuery, state: FSMContext):
 
     messages = {
         "uz": f"✅ {count} ta slayd tanlandi.\n\nEndi taqdimot mavzusini yozib yuboring:",
-        "ru": f"✅ Выбрано {count} слайдов.\n\nТеперь отправьте тему презентации:",
+        "ru": f"✅ Выбрано {count} слайдов.\n\nТеперь введите тему презентации:",
         "en": f"✅ {count} slides selected.\n\nNow enter your presentation topic:"
     }
     await callback.message.edit_text(messages.get(lang, messages["uz"]))
@@ -89,8 +89,8 @@ async def process_topic(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"📝 Mavzu: *{topic}*\n\n"
-        "Agar slaydga o'zingizning rasmingizni yoki qo'shimcha ma'lumot/rejani kiritmoqchi bo'lsangiz, "
-        "hozir rasm yoki matn yuboring.\n\n"
+        "Agar slaydga o'zingizning rasmingizni yoki maxsus reja/talablarni kiritmoqchi bo'lsangiz, "
+        "hozir rasm yoki xabar yuboring.\n\n"
         "Agar shart bo'lmasa, quyidagi tugmani bosing:",
         parse_mode="Markdown",
         reply_markup=get_skip_kb()
@@ -120,14 +120,13 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
     slide_count = user_data.get("slide_count", 10)
     language = user_data.get("language", "uz")
 
-    status_msg = await message.answer(f"⏳ {slide_count} ta slayd, mos rasmlar va ma'lumotlar tayyorlanmoqda...")
+    status_msg = await message.answer(f"⏳ {slide_count} ta slayd, 3D/AI rasmlar va rasmiy manbalar tahlil qilinmoqda...")
 
     uid = message.from_user.id
     pptx_path = f"pres_{uid}.pptx"
     preview_path = f"preview_{uid}.png"
 
     try:
-        # Generate with strict slide count enforcement & real facts
         plan = generate_presentation_json(
             topic=topic,
             slide_count=slide_count,
@@ -148,7 +147,7 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
         doc = FSInputFile(pptx_path, filename=f"{topic[:25].replace(' ', '_')}.pptx")
         await message.answer_document(
             document=doc,
-            caption=f"✅ *{len(plan.slides)} ta* slaydli taqdimot to'liq tayyor!\n\nYangi taqdimot uchun /start ni bosing.",
+            caption=f"✅ *{len(plan.slides)} ta* slaydli premium taqdimot tayyor!\nYangi taqdimot yaratish uchun /start ni bosing.",
             parse_mode="Markdown"
         )
     except Exception as err:
