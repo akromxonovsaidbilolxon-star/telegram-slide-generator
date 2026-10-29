@@ -54,24 +54,24 @@ THEMES = {
 
 # ----------------- PYDANTIC SCHEMAS -----------------
 class MetricItem(BaseModel):
-    value: str = Field(description="Bold stat marker, e.g., '85%', '10x', 'Zero', '$4.2M'")
-    label: str = Field(description="Contextual explanation for the stat")
+    value: str = Field(description="Real-world metric or stat, e.g., '$4.4T', '18%', '70%', '10x'")
+    label: str = Field(description="Verified description or date context for the stat")
 
 class CardItem(BaseModel):
     title: str = Field(description="Pillar name or core concept")
-    description: str = Field(description="Two sentences of clear analytical context")
+    description: str = Field(description="Two analytical, factual sentences")
 
 class SlideStructure(BaseModel):
     slide_number: int
     layout_type: str = Field(description="'title', 'cards', 'split_image', 'metrics', 'comparison', 'closing'")
     eyebrow: str = Field(description="Categorical uppercase tag (e.g. 'OPERATIONAL STRATEGY')")
-    title: str = Field(description="Punchy executive headline (max 45 chars)")
+    title: str = Field(description="Punchy executive headline, max 45 chars")
     subtitle: str | None = None
     bullet_points: list[str] = Field(default=[], description="Bullet points starting with bold action headers (e.g., 'Autonomous Execution: ...')")
     cards: list[CardItem] = Field(default=[], description="2 or 3 distinct conceptual cards")
     metrics: list[MetricItem] = Field(default=[], description="Exactly 3 metrics for 'metrics' layout")
     key_takeaway: str | None = Field(default=None, description="One crisp takeaway sentence")
-    image_query: str | None = Field(default=None, description="2 simple English keywords for stock photo query")
+    image_query: str | None = Field(default=None, description="2 simple English keywords for Pixabay stock photo search (e.g., 'robotics factory')")
 
 class MasterpiecePresentation(BaseModel):
     topic: str
@@ -79,62 +79,106 @@ class MasterpiecePresentation(BaseModel):
     theme: str
     slides: list[SlideStructure]
 
-# ----------------- IMAGE RETRIEVAL -----------------
-def fetch_photo(query: str | None) -> io.BytesIO | None:
-    if not query:
+# ----------------- PIXABAY IMAGE RETRIEVAL -----------------
+def fetch_pixabay_photo(query: str | None) -> io.BytesIO | None:
+    api_key = os.environ.get("PIXABAY_API_KEY")
+    if not api_key or not query:
         return None
+
+    # Clean query (take first 2-3 words)
+    clean_query = " ".join(query.strip().replace("-", " ").split()[:3])
+    url = "https://pixabay.com/api/"
+    params = {
+        "key": api_key,
+        "q": clean_query,
+        "image_type": "photo",
+        "orientation": "horizontal",
+        "safesearch": "true",
+        "per_page": 3
+    }
+
     try:
-        clean_keyword = urllib.parse.quote_plus("-".join(query.strip().split()[:2]).lower())
-        url = f"https://picsum.photos/seed/{clean_keyword}/800/600"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        resp = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
-        if resp.status_code == 200 and len(resp.content) > 3000:
-            img_io = io.BytesIO(resp.content)
-            img = Image.open(img_io)
-            img.verify()
-            img_io.seek(0)
-            return img_io
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code == 200:
+            hits = resp.json().get("hits", [])
+            if hits:
+                # Use largeImageURL or webformatURL for optimal resolution
+                img_url = hits[0].get("webformatURL") or hits[0].get("largeImageURL")
+                img_resp = requests.get(img_url, timeout=10)
+                if img_resp.status_code == 200 and len(img_resp.content) > 3000:
+                    img_io = io.BytesIO(img_resp.content)
+                    img = Image.open(img_io)
+                    img.verify()
+                    img_io.seek(0)
+                    return img_io
+        else:
+            print(f"[Pixabay Warning]: Status {resp.status_code}")
     except Exception as e:
-        print(f"[Image Fetch Error]: {e}")
+        print(f"[Pixabay Error]: {e}")
     return None
 
-# ----------------- GEMINI GENERATION -----------------
+# ----------------- GEMINI + GOOGLE SEARCH RESEARCH & STRUCTURING -----------------
 def generate_presentation_json(topic: str, slide_count: int = 6, language: str = "uz", theme: str = "midnight") -> MasterpiecePresentation:
     api_key = os.environ.get("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
 
     lang_map = {
-        "uz": "O'zbek tili (barcha matnlar, xulosalar va tushuntirishlar 100% ravon o'zbek tilida yozilsin)",
-        "ru": "Русский язык (весь контент, терминология и выводы строго на русском языке)",
-        "en": "English language (executive consulting grade, concise and analytical)"
+        "uz": "O'zbek tili (barcha faktlar, raqamlar, tushuntirishlar va xulosalar 100% ravon o'zbek tilida yozilsin)",
+        "ru": "Русский язык (реальные даты, статистика и выводы строго на русском языке)",
+        "en": "English language (executive consulting grade, factual metrics and verified dates)"
     }
     target_language = lang_map.get(language, "O'zbek tili")
 
+    # Step 1: Research with Google Search Grounding to get verified facts & dates
+    research_prompt = (
+        f"Perform Google Search to find current facts, verified statistics, dates, and industry data "
+        f"regarding the topic: '{topic}'. Focus on real reports, market valuations, and concrete figures."
+    )
+    
+    try:
+        search_res = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=research_prompt,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                temperature=0.2
+            )
+        )
+        research_context = search_res.text if search_res and search_res.text else ""
+    except Exception as e:
+        print(f"[Search Grounding Warning]: {e}")
+        research_context = "Use your internal up-to-date factual knowledge."
+
+    # Step 2: Format verified research into the Masterpiece Presentation Schema
     system_instruction = (
         "You are an executive principal presentation designer at McKinsey & Company. "
-        "Create a comprehensive, editorial-grade slide deck. "
+        "Create an in-depth, structured presentation deck using the provided research and real facts. "
         "Enforce layout diversity:\n"
         "- Slide 1: 'title'\n"
         "- Slide 2: 'cards' (3 distinct pillars with clear descriptions)\n"
-        "- Slide 3: 'split_image' (rich bullet points where the first 2-3 words are capitalized lead-in concepts, paired with a photo query)\n"
-        "- Slide 4: 'metrics' (3 quantitative markers/percentages)\n"
+        "- Slide 3: 'split_image' (rich bullet points starting with bold capitalized concepts, paired with a photo query)\n"
+        "- Slide 4: 'metrics' (3 real quantitative numbers/percentages based on research)\n"
         "- Slide 5: 'comparison' (2 structural comparative pillars)\n"
         "- Slide 6: 'closing' (strategic roadmap and synthesis)\n"
-        "Ensure bullet points are insightful and not brief one-liners. Strictly follow the JSON schema."
+        "For 'image_query', output 2 simple, direct English keywords matching Pixabay photos (e.g., 'freight logistics', 'solar farm')."
     )
 
-    prompt = f"Topic: {topic}\nSlide Count: {slide_count}\nTheme: {theme}\nTarget Language: {target_language}"
+    synthesis_prompt = (
+        f"Topic: {topic}\n"
+        f"Desired Slide Count: {slide_count}\n"
+        f"Theme: {theme}\n"
+        f"Target Output Language: {target_language}\n\n"
+        f"Research and Facts to Ground the Deck:\n{research_context[:3000]}"
+    )
 
     response = client.models.generate_content(
         model="gemini-3.8-flash",
-        contents=prompt,
+        contents=synthesis_prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
             response_mime_type="application/json",
             response_schema=MasterpiecePresentation,
-            temperature=0.25
+            temperature=0.2
         ),
     )
     return response.parsed
@@ -288,15 +332,16 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
                 p.font.color.rgb = theme["primary"]
                 p.space_after = Pt(14)
 
-            img_stream = fetch_photo(s.image_query or s.title)
+            # Query Pixabay for accurate photo
+            img_stream = fetch_pixabay_photo(s.image_query or s.title)
             image_inserted = False
 
             if img_stream:
                 try:
                     slide.shapes.add_picture(img_stream, Inches(7.6), Inches(1.8), width=Inches(4.9), height=Inches(3.8))
                     image_inserted = True
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Failed to place Pixabay image: {e}")
 
             if not image_inserted:
                 fallback_card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(7.6), Inches(1.8), Inches(4.9), Inches(3.8))
@@ -402,15 +447,12 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
 
 # ----------------- SLIDE PREVIEW IMAGE GENERATOR -----------------
 def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = "preview.png") -> str:
-    """Generates an executive teaser card for Telegram preview."""
     W, H = 1200, 675
     img = Image.new("RGB", (W, H), color=(9, 13, 22))
     draw = ImageDraw.Draw(img)
 
-    # Accent top border
     draw.rectangle([(0, 0), (W, 10)], fill=(2, 132, 199))
 
-    # Fallback to default font
     try:
         font_large = ImageFont.truetype("DejaVuSans-Bold.ttf", 44)
         font_sub = ImageFont.truetype("DejaVuSans.ttf", 22)
@@ -420,35 +462,24 @@ def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = 
         font_sub = ImageFont.load_default()
         font_tag = ImageFont.load_default()
 
-    # Draw Eyebrow
-    draw.text((70, 70), "EXECUTIVE SLIDE DECK", fill=(2, 132, 199), font=font_tag)
+    draw.text((70, 70), "EXECUTIVE SLIDE DECK (SEARCH GROUNDED)", fill=(2, 132, 199), font=font_tag)
 
-    # Draw Title
     title_text = plan.topic.upper()
     if len(title_text) > 40:
         title_text = title_text[:37] + "..."
     draw.text((70, 110), title_text, fill=(248, 250, 252), font=font_large)
 
-    # Draw 3 Slide Mini-Cards
-    card_w = 330
-    card_h = 360
-    y_card = 220
-    gap = 35
+    card_w, card_h = 330, 360
+    y_card, gap = 220, 35
 
     for i, s in enumerate(plan.slides[:3]):
         x_card = 70 + i * (card_w + gap)
-        # Card body
         draw.rounded_rectangle([(x_card, y_card), (x_card + card_w, y_card + card_h)], radius=12, fill=(18, 24, 38), outline=(30, 41, 59), width=2)
-        
-        # Slide number badge
         draw.rounded_rectangle([(x_card + 20, y_card + 20), (x_card + 80, y_card + 50)], radius=6, fill=(2, 132, 199))
         draw.text((x_card + 30, y_card + 25), f"0{s.slide_number}", fill=(255, 255, 255), font=font_tag)
 
-        # Slide mini title
         s_title = s.title if len(s.title) < 28 else s.title[:25] + "..."
         draw.text((x_card + 20, y_card + 75), s_title, fill=(248, 250, 252), font=font_tag)
-
-        # Slide eyebrow / archetype
         draw.text((x_card + 20, y_card + 115), f"Layout: {s.layout_type.capitalize()}", fill=(100, 116, 139), font=font_sub)
 
     img.save(output_img_path)
