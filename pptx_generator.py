@@ -1,6 +1,7 @@
 import os
 import io
 import urllib.parse
+import random
 import requests
 from PIL import Image, ImageDraw, ImageFont
 from google import genai
@@ -12,172 +13,184 @@ from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE
 from pydantic import BaseModel, Field
 
-# ----------------- THEMES CONFIGURATION -----------------
-THEMES = {
-    "midnight": {
-        "name": "Midnight Executive",
-        "dark_bg": RGBColor(9, 13, 22),
-        "light_bg": RGBColor(255, 255, 255),
+# ----------------- DYNAMIC COLOR ENGINE -----------------
+# Generates distinct aesthetic palettes so every user deck looks unique
+PALETTES = [
+    {
+        "dark_bg": RGBColor(10, 15, 29),
         "card_bg": RGBColor(248, 250, 252),
         "card_border": RGBColor(226, 232, 240),
         "primary": RGBColor(15, 23, 42),
-        "accent": RGBColor(2, 132, 199),         # Cyan 600
-        "accent_light": RGBColor(224, 242, 254), # Cyan 100
+        "accent": RGBColor(2, 132, 199),         # Sapphire Cyan
+        "accent_light": RGBColor(224, 242, 254),
         "muted": RGBColor(100, 116, 139),
         "white": RGBColor(248, 250, 252)
     },
-    "emerald": {
-        "name": "Emerald Growth",
+    {
+        "dark_bg": RGBColor(15, 23, 42),
+        "card_bg": RGBColor(241, 245, 249),
+        "card_border": RGBColor(203, 213, 225),
+        "primary": RGBColor(30, 41, 59),
+        "accent": RGBColor(99, 102, 241),        # Indigo Violet
+        "accent_light": RGBColor(238, 242, 255),
+        "muted": RGBColor(100, 116, 139),
+        "white": RGBColor(255, 255, 255)
+    },
+    {
         "dark_bg": RGBColor(6, 78, 59),
-        "light_bg": RGBColor(255, 255, 255),
         "card_bg": RGBColor(240, 253, 244),
         "card_border": RGBColor(187, 247, 208),
-        "primary": RGBColor(19, 78, 74),
-        "accent": RGBColor(5, 150, 105),         # Emerald 600
-        "accent_light": RGBColor(209, 250, 229), # Emerald 100
+        "primary": RGBColor(6, 78, 59),
+        "accent": RGBColor(16, 185, 129),        # Emerald Mint
+        "accent_light": RGBColor(209, 250, 229),
         "muted": RGBColor(75, 85, 99),
         "white": RGBColor(255, 255, 255)
     },
-    "minimal": {
-        "name": "Modern Minimalist",
+    {
         "dark_bg": RGBColor(24, 24, 27),
-        "light_bg": RGBColor(255, 255, 255),
-        "card_bg": RGBColor(244, 244, 245),
+        "card_bg": RGBColor(250, 250, 250),
         "card_border": RGBColor(228, 228, 231),
         "primary": RGBColor(24, 24, 27),
-        "accent": RGBColor(217, 119, 6),          # Amber 600
-        "accent_light": RGBColor(254, 243, 199),  # Amber 100
+        "accent": RGBColor(217, 119, 6),          # Executive Amber
+        "accent_light": RGBColor(254, 243, 199),
         "muted": RGBColor(113, 113, 122),
-        "white": RGBColor(250, 250, 250)
+        "white": RGBColor(255, 255, 255)
     }
-}
+]
 
 # ----------------- PYDANTIC SCHEMAS -----------------
 class MetricItem(BaseModel):
-    value: str = Field(description="Real-world metric, e.g. '$4.4T', '18%', '70%', '10x'")
-    label: str = Field(description="Contextual explanation for the stat")
+    value: str = Field(description="Concrete number/stat, e.g., '69 ta', '20 km³', '85%'")
+    label: str = Field(description="Contextual description under the metric")
 
 class CardItem(BaseModel):
     title: str = Field(description="Pillar name or core concept")
-    description: str = Field(description="Two analytical, factual sentences")
+    description: str = Field(description="Two clear sentences explaining the concept")
 
 class SlideStructure(BaseModel):
     slide_number: int
-    layout_type: str = Field(description="'title', 'cards', 'split_image', 'metrics', 'comparison', 'closing'")
-    eyebrow: str = Field(description="Categorical uppercase tag (e.g. 'OPERATIONAL STRATEGY')")
+    layout_type: str = Field(description="Must be one of: 'title', 'cards', 'split_image', 'metrics', 'comparison', 'closing'")
+    eyebrow: str = Field(description="Categorical uppercase tag")
     title: str = Field(description="Punchy executive headline, max 45 chars")
     subtitle: str | None = None
-    bullet_points: list[str] = Field(default=[], description="Bullet points starting with bold concepts (e.g. 'Autonomous Execution: ...')")
-    cards: list[CardItem] = Field(default=[], description="2 or 3 distinct conceptual cards")
-    metrics: list[MetricItem] = Field(default=[], description="Exactly 3 metrics for 'metrics' layout")
+    bullet_points: list[str] = Field(default=[], description="Bullet points starting with bold capitalized concepts")
+    cards: list[CardItem] = Field(default=[], description="Cards for 'cards' or 'comparison' layouts")
+    metrics: list[MetricItem] = Field(default=[], description="3 metrics for 'metrics' layout")
     key_takeaway: str | None = Field(default=None, description="One crisp takeaway sentence")
-    image_query: str | None = Field(default=None, description="2-3 specific English keywords for Google Images")
+    image_query_en: str | None = Field(default=None, description="2-3 simple generic English keywords for stock photo search. Example: 'water dam aerial', 'hydroelectric turbine', 'modern logistics warehouse'")
 
 class MasterpiecePresentation(BaseModel):
     topic: str
     language: str
-    theme: str
+    total_slides: int
     slides: list[SlideStructure]
 
-# ----------------- PIXABAY FALLBACK -----------------
-def fetch_pixabay_photo(query: str | None) -> io.BytesIO | None:
-    api_key = os.environ.get("PIXABAY_API_KEY")
-    if not api_key or not query:
+# ----------------- IMAGE RETRIEVAL WITH FALLBACKS -----------------
+def fetch_photo(query_en: str | None, user_custom_image_bytes: bytes | None = None) -> io.BytesIO | None:
+    # 1. Prioritize user-uploaded picture if provided
+    if user_custom_image_bytes:
+        try:
+            return io.BytesIO(user_custom_image_bytes)
+        except Exception:
+            pass
+
+    if not query_en:
         return None
 
-    clean_query = " ".join(query.strip().replace("-", " ").split()[:3])
-    url = "https://pixabay.com/api/"
-    params = {
-        "key": api_key,
-        "q": clean_query,
-        "image_type": "photo",
-        "orientation": "horizontal",
-        "safesearch": "true",
-        "per_page": 3
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=8)
-        if resp.status_code == 200:
-            hits = resp.json().get("hits", [])
-            if hits:
-                img_url = hits[0].get("webformatURL") or hits[0].get("largeImageURL")
-                img_resp = requests.get(img_url, timeout=8)
-                if img_resp.status_code == 200 and len(img_resp.content) > 3000:
-                    img_io = io.BytesIO(img_resp.content)
-                    img = Image.open(img_io)
-                    img.verify()
-                    img_io.seek(0)
-                    return img_io
-    except Exception as e:
-        print(f"[Pixabay Fallback Error]: {e}")
-    return None
-
-# ----------------- GOOGLE CUSTOM SEARCH (IMAGE) -----------------
-def fetch_google_image(query: str | None) -> io.BytesIO | None:
+    # Clean English query
+    clean_q = " ".join(query_en.strip().replace("-", " ").split()[:3])
+    
+    # 2. Try Google Custom Search first
     api_key = os.environ.get("GOOGLE_SEARCH_API_KEY")
     cx = os.environ.get("GOOGLE_CSE_ID")
+    if api_key and cx:
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            "key": api_key,
+            "cx": cx,
+            "q": clean_q,
+            "searchType": "image",
+            "num": 3,
+            "imgSize": "large",
+            "safe": "active"
+        }
+        try:
+            resp = requests.get(url, params=params, timeout=8)
+            if resp.status_code == 200:
+                items = resp.json().get("items", [])
+                for item in items:
+                    img_url = item.get("link")
+                    if img_url:
+                        try:
+                            headers = {"User-Agent": "Mozilla/5.0"}
+                            img_resp = requests.get(img_url, headers=headers, timeout=6)
+                            if img_resp.status_code == 200 and len(img_resp.content) > 3000:
+                                img_io = io.BytesIO(img_resp.content)
+                                img = Image.open(img_io)
+                                img.verify()
+                                img_io.seek(0)
+                                return img_io
+                        except Exception:
+                            continue
+        except Exception as e:
+            print(f"[Google Image Error]: {e}")
 
-    if not api_key or not cx or not query:
-        return fetch_pixabay_photo(query)
+    # 3. Try Pixabay API Fallback
+    pixabay_key = os.environ.get("PIXABAY_API_KEY")
+    if pixabay_key:
+        try:
+            p_url = "https://pixabay.com/api/"
+            params = {
+                "key": pixabay_key,
+                "q": clean_q,
+                "image_type": "photo",
+                "orientation": "horizontal",
+                "per_page": 3
+            }
+            resp = requests.get(p_url, params=params, timeout=6)
+            if resp.status_code == 200:
+                hits = resp.json().get("hits", [])
+                if hits:
+                    img_url = hits[0].get("webformatURL") or hits[0].get("largeImageURL")
+                    img_resp = requests.get(img_url, timeout=6)
+                    if img_resp.status_code == 200:
+                        return io.BytesIO(img_resp.content)
+        except Exception as e:
+            print(f"[Pixabay Error]: {e}")
 
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "key": api_key,
-        "cx": cx,
-        "q": query.strip(),
-        "searchType": "image",
-        "num": 3,
-        "imgSize": "large",
-        "imgType": "photo",
-        "safe": "active"
-    }
-
+    # 4. Ultimate Unsplash/Picsum Direct Photo Redirect
     try:
-        resp = requests.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            items = resp.json().get("items", [])
-            for item in items:
-                img_url = item.get("link")
-                if not img_url:
-                    continue
-                try:
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    }
-                    img_resp = requests.get(img_url, headers=headers, timeout=8)
-                    if img_resp.status_code == 200 and len(img_resp.content) > 4000:
-                        img_io = io.BytesIO(img_resp.content)
-                        img = Image.open(img_io)
-                        img.verify()
-                        img_io.seek(0)
-                        return img_io
-                except Exception:
-                    continue
-        else:
-            print(f"[Google Search Warning]: HTTP {resp.status_code}")
-    except Exception as e:
-        print(f"[Google Search Error]: {e}")
+        url_seed = urllib.parse.quote_plus(clean_q)
+        direct_resp = requests.get(f"https://picsum.photos/seed/{url_seed}/800/600", timeout=6)
+        if direct_resp.status_code == 200 and len(direct_resp.content) > 3000:
+            return io.BytesIO(direct_resp.content)
+    except Exception:
+        pass
 
-    # Если Google не вернул результат, пробуем Pixabay
-    return fetch_pixabay_photo(query)
+    return None
 
-# ----------------- GEMINI + SEARCH GROUNDING -----------------
-def generate_presentation_json(topic: str, slide_count: int = 6, language: str = "uz", theme: str = "midnight") -> MasterpiecePresentation:
+# ----------------- GEMINI GENERATION -----------------
+def generate_presentation_json(
+    topic: str,
+    slide_count: int = 6,
+    language: str = "uz",
+    user_notes: str | None = None
+) -> MasterpiecePresentation:
     api_key = os.environ.get("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
 
     lang_map = {
-        "uz": "O'zbek tili (barcha faktlar, raqamlar, tushuntirishlar va xulosalar 100% ravon o'zbek tilida yozilsin)",
-        "ru": "Русский язык (реальные даты, статистика и выводы строго на русском языке)",
-        "en": "English language (executive consulting grade, factual metrics and verified dates)"
+        "uz": "O'zbek tili (barcha matnlar, faktlar va xulosalar 100% ravon o'zbek tilida bo'lsin)",
+        "ru": "Русский язык (весь текст строго на русском языке)",
+        "en": "English language (executive consulting grade)"
     }
     target_language = lang_map.get(language, "O'zbek tili")
 
+    # Research Step using Google Search
     research_prompt = (
-        f"Perform Google Search to find current facts, verified statistics, dates, and industry data "
-        f"regarding the topic: '{topic}'. Focus on real reports, market valuations, and concrete figures."
+        f"Search Google for accurate, up-to-date facts, real metrics, laws/decrees, and data on: '{topic}'. "
+        f"User custom details: {user_notes or 'None'}"
     )
-
     try:
         search_res = client.models.generate_content(
             model="gemini-3.8-flash",
@@ -189,28 +202,27 @@ def generate_presentation_json(topic: str, slide_count: int = 6, language: str =
         )
         research_context = search_res.text if search_res and search_res.text else ""
     except Exception as e:
-        print(f"[Search Grounding Warning]: {e}")
-        research_context = "Use internal up-to-date factual knowledge."
+        print(f"[Search Warning]: {e}")
+        research_context = ""
 
+    # Synthesis Step with Strict Length Enforcement
     system_instruction = (
-        "You are an executive principal presentation designer at McKinsey & Company. "
-        "Create an in-depth, structured presentation deck using the provided research and real facts. "
-        "Enforce layout diversity:\n"
-        "- Slide 1: 'title'\n"
-        "- Slide 2: 'cards' (3 distinct pillars with clear descriptions)\n"
-        "- Slide 3: 'split_image' (rich bullet points starting with bold capitalized concepts, paired with a photo query)\n"
-        "- Slide 4: 'metrics' (3 real quantitative numbers/percentages based on research)\n"
-        "- Slide 5: 'comparison' (2 structural comparative pillars)\n"
-        "- Slide 6: 'closing' (strategic roadmap and synthesis)\n"
-        "For 'image_query', output 2-3 specific English keywords suitable for Google Images search."
+        f"You are a Senior Presentation Architect at McKinsey. "
+        f"You MUST generate EXACTLY {slide_count} slides in the 'slides' array. Not 6, not 8, but exactly {slide_count}. "
+        f"- Slide 1 MUST be layout_type 'title'.\n"
+        f"- Slide {slide_count} MUST be layout_type 'closing'.\n"
+        f"- All intermediary slides (slides 2 through {slide_count - 1}) must alternate dynamically among: "
+        f"'cards', 'split_image', 'metrics', and 'comparison'.\n"
+        f"CRITICAL: 'image_query_en' MUST ALWAYS BE 2-3 ENGLISH WORDS describing a generic stock photo "
+        f"(e.g., 'water reservoir dam', 'solar panels field', 'cargo ship harbor'). NEVER use non-English terms for image_query_en."
     )
 
     synthesis_prompt = (
         f"Topic: {topic}\n"
-        f"Desired Slide Count: {slide_count}\n"
-        f"Theme: {theme}\n"
-        f"Target Output Language: {target_language}\n\n"
-        f"Research and Facts to Ground the Deck:\n{research_context[:3000]}"
+        f"Required Exact Slide Count: {slide_count}\n"
+        f"Language: {target_language}\n"
+        f"User Custom Instructions: {user_notes or 'Standard high-level briefing'}\n\n"
+        f"Verified Facts Context:\n{research_context[:3500]}"
     )
 
     response = client.models.generate_content(
@@ -226,12 +238,17 @@ def generate_presentation_json(topic: str, slide_count: int = 6, language: str =
     return response.parsed
 
 # ----------------- PPTX BUILDER -----------------
-def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.pptx") -> str:
+def create_pptx_file(
+    plan: MasterpiecePresentation,
+    output_path: str = "output.pptx",
+    user_custom_image_bytes: bytes | None = None
+) -> str:
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
 
-    theme = THEMES.get(plan.theme, THEMES["midnight"])
+    # Randomly select one of the luxury palettes for visual variety per user/deck
+    theme = random.choice(PALETTES)
     blank_layout = prs.slide_layouts[6]
 
     for s in plan.slides:
@@ -274,7 +291,7 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
             line.line.fill.background()
             continue
 
-        # 6. CLOSING SLIDE
+        # CLOSING SLIDE
         if s.layout_type == "closing":
             bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(7.5))
             bg.fill.solid()
@@ -374,8 +391,8 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
                 p.font.color.rgb = theme["primary"]
                 p.space_after = Pt(14)
 
-            # Вызываем Google Custom Search с Pixabay fallback
-            img_stream = fetch_google_image(s.image_query or s.title)
+            # Fetch image using English search query or user's custom photo
+            img_stream = fetch_photo(s.image_query_en, user_custom_image_bytes)
             image_inserted = False
 
             if img_stream:
@@ -401,12 +418,12 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
                 fp.font.color.rgb = theme["primary"]
                 fp.alignment = PP_ALIGN.CENTER
 
-        # 4. METRICS / STATS LAYOUT
+        # 4. METRICS LAYOUT
         elif s.layout_type == "metrics":
             m_items = s.metrics if s.metrics else [
-                MetricItem(value="85%", label="Samaradorlik ko'rsatkichi"),
-                MetricItem(value="10x", label="Jarayon optimallashuvi"),
-                MetricItem(value="Zero", label="Operatsion uzilishlar")
+                MetricItem(value="85%", label="Samaradorlik"),
+                MetricItem(value="10x", label="Tezlashuv"),
+                MetricItem(value="Zero", label="Operatsion xatolar")
             ]
             m_w = Inches(3.64)
             m_h = Inches(2.3)
@@ -438,8 +455,8 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
         # 5. COMPARISON LAYOUT
         elif s.layout_type == "comparison":
             items = s.cards[:2] if len(s.cards) >= 2 else [
-                CardItem(title="Klassik Yondashuv", description="An'anaviy operatsion modellar va cheklovlar."),
-                CardItem(title="Intellektual Yondashuv", description="To'liq avtomatlashtirilgan o'z-o'zini tahlil qiluvchi ekotizim.")
+                CardItem(title="Klassik Yondashuv", description="An'anaviy operatsion modellar va ularning cheklovlari."),
+                CardItem(title="Zamonaviy Yondashuv", description="Avtomatlashtirilgan raqamli boshqaruv tizimlari.")
             ]
             c_w = Inches(5.6)
             c_h = Inches(3.8)
@@ -504,7 +521,7 @@ def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = 
         font_sub = ImageFont.load_default()
         font_tag = ImageFont.load_default()
 
-    draw.text((70, 70), "EXECUTIVE SLIDE DECK (SEARCH GROUNDED)", fill=(2, 132, 199), font=font_tag)
+    draw.text((70, 70), f"EXECUTIVE DECK ({len(plan.slides)} SLIDES)", fill=(2, 132, 199), font=font_tag)
 
     title_text = plan.topic.upper()
     if len(title_text) > 40:
