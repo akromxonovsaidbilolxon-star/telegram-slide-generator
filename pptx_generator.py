@@ -13,7 +13,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE
 from pydantic import BaseModel, Field
 
-# High-contrast mobile-friendly palettes
+# ----------------- THEMES & PALETTES -----------------
 PALETTES = [
     {
         "name": "Obsidian Cyan",
@@ -34,18 +34,29 @@ PALETTES = [
         "text_muted": RGBColor(185, 175, 225),
         "accent": RGBColor(192, 132, 252),
         "accent_light": RGBColor(88, 28, 135)
+    },
+    {
+        "name": "Nordic Teal",
+        "dark_bg": RGBColor(6, 20, 24),
+        "card_bg": RGBColor(13, 37, 44),
+        "card_border": RGBColor(21, 58, 69),
+        "text_main": RGBColor(241, 245, 249),
+        "text_muted": RGBColor(148, 175, 185),
+        "accent": RGBColor(45, 212, 191),
+        "accent_light": RGBColor(19, 78, 74)
     }
 ]
 
+# ----------------- PYDANTIC SCHEMAS -----------------
 class MetricBox(BaseModel):
-    value: str = Field(description="e.g., '1.6B', '1.2%', '$50B'")
-    title: str = Field(description="Short label, max 3 words")
+    value: str = Field(description="e.g., '1.6B', '88%', '$50B', '10x'")
+    title: str = Field(description="Short label, max 3-4 words")
     desc: str = Field(description="Brief 1-sentence explanation")
 
 class PillarCard(BaseModel):
     number: str = Field(description="'01', '02', '03'")
-    title: str
-    desc: str
+    title: str = Field(description="Headline of pillar")
+    desc: str = Field(description="Two clear sentences")
 
 class SlideContent(BaseModel):
     slide_number: int
@@ -58,7 +69,7 @@ class SlideContent(BaseModel):
     cards: list[PillarCard] = Field(default=[])
     metrics: list[MetricBox] = Field(default=[])
     takeaway_callout: str | None = None
-    ai_image_prompt: str | None = None
+    ai_image_prompt: str | None = Field(default=None, description="2-3 simple English keywords for photo query")
 
 class MasterpiecePresentation(BaseModel):
     topic: str
@@ -66,33 +77,75 @@ class MasterpiecePresentation(BaseModel):
     total_slides: int
     slides: list[SlideContent]
 
+# ----------------- IMAGE RETRIEVAL WITH MULTI-PROVIDER FALLBACK -----------------
 def fetch_image_secure(prompt: str | None, custom_bytes: bytes | None = None) -> io.BytesIO | None:
     if custom_bytes:
         try:
             return io.BytesIO(custom_bytes)
         except Exception:
             pass
+
     if not prompt:
         return None
 
-    clean_p = urllib.parse.quote_plus(" ".join(prompt.strip().split()[:3]))
-    
-    # 1. Fast AI image generation
-    try:
-        url = f"https://image.pollinations.ai/prompt/{clean_p}?width=1024&height=640&model=flux&nologo=true"
-        resp = requests.get(url, timeout=8)
-        if resp.status_code == 200 and len(resp.content) > 4000:
-            bio = io.BytesIO(resp.content)
-            img = Image.open(bio)
-            img.verify()
-            bio.seek(0)
-            return bio
-    except Exception:
-        pass
+    clean_prompt = " ".join(prompt.strip().replace("-", " ").split()[:3])
 
-    # 2. Picsum reliable photo fallback
+    # 1. Google Custom Search
+    api_key = os.environ.get("GOOGLE_SEARCH_API_KEY")
+    cx = os.environ.get("GOOGLE_CSE_ID")
+    if api_key and cx:
+        try:
+            url = "https://www.googleapis.com/customsearch/v1"
+            params = {
+                "key": api_key,
+                "cx": cx,
+                "q": clean_prompt,
+                "searchType": "image",
+                "num": 2,
+                "imgSize": "large",
+                "safe": "active"
+            }
+            res = requests.get(url, params=params, timeout=6)
+            if res.status_code == 200:
+                items = res.json().get("items", [])
+                for item in items:
+                    l = item.get("link")
+                    if l:
+                        ir = requests.get(l, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+                        if ir.status_code == 200 and len(ir.content) > 4000:
+                            bio = io.BytesIO(ir.content)
+                            img = Image.open(bio)
+                            img.verify()
+                            bio.seek(0)
+                            return bio
+        except Exception:
+            pass
+
+    # 2. Pixabay API Fallback
+    pix_key = os.environ.get("PIXABAY_API_KEY")
+    if pix_key:
+        try:
+            p_res = requests.get("https://pixabay.com/api/", params={
+                "key": pix_key,
+                "q": clean_prompt,
+                "image_type": "photo",
+                "orientation": "horizontal",
+                "per_page": 3
+            }, timeout=5)
+            if p_res.status_code == 200:
+                hits = p_res.json().get("hits", [])
+                if hits:
+                    u = hits[0].get("webformatURL")
+                    ir = requests.get(u, timeout=5)
+                    if ir.status_code == 200:
+                        return io.BytesIO(ir.content)
+        except Exception:
+            pass
+
+    # 3. Fast Direct Photo Stream
     try:
-        resp = requests.get(f"https://picsum.photos/seed/{clean_p}/800/600", timeout=6)
+        clean_seed = urllib.parse.quote_plus(clean_prompt)
+        resp = requests.get(f"https://picsum.photos/seed/{clean_seed}/800/600", timeout=5)
         if resp.status_code == 200 and len(resp.content) > 3000:
             return io.BytesIO(resp.content)
     except Exception:
@@ -100,38 +153,78 @@ def fetch_image_secure(prompt: str | None, custom_bytes: bytes | None = None) ->
 
     return None
 
-def generate_presentation_json(topic: str, slide_count: int = 10, language: str = "uz", user_notes: str | None = None) -> MasterpiecePresentation:
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+# ----------------- CONTENT GENERATION VIA GEMINI -----------------
+def generate_presentation_json(
+    topic: str,
+    slide_count: int = 10,
+    language: str = "uz",
+    user_notes: str | None = None
+) -> MasterpiecePresentation:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
 
     lang_map = {
         "uz": "O'zbek tili (barcha matnlar 100% ravon o'zbek tilida)",
-        "ru": "Русский язык (весь текст строго на русском)",
-        "en": "English language"
+        "ru": "Русский язык (весь контент строго на русском)",
+        "en": "English language (executive presentation grade)"
     }
+    target_language = lang_map.get(language, "O'zbek tili")
+
+    # Research Step using Google Search
+    research_prompt = (
+        f"Search Google for real verified stats, authoritative reports, dates, and projections for: '{topic}'. "
+        f"User notes: {user_notes or 'None'}"
+    )
+    try:
+        search_res = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=research_prompt,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                temperature=0.2
+            )
+        )
+        research_context = search_res.text if search_res and search_res.text else ""
+    except Exception as e:
+        print(f"[Search Warning]: {e}")
+        research_context = ""
 
     system_instruction = (
-        f"You are an executive slide architect. Generate EXACTLY {slide_count} slides. "
+        f"You are an executive slide architect. You MUST generate EXACTLY {slide_count} slides in the 'slides' array. "
         "Keep text concise, punchy, and readable on mobile devices. "
-        "Never make titles longer than 40 characters. "
-        "Mandatory layouts: Slide 1: 'title', Slide {slide_count}: 'closing', "
-        "interleave 'cards_grid', 'stats_row', and 'split_image' in between."
+        "Never make headlines longer than 40 characters to avoid text overflow. "
+        f"- Slide 1 MUST be 'title'.\n"
+        f"- Slide {slide_count} MUST be 'closing'.\n"
+        "- Intermediary slides must alternate between 'cards_grid', 'stats_row', and 'split_image'.\n"
+        "CRITICAL: 'ai_image_prompt' MUST ALWAYS BE 2-3 ENGLISH KEYWORDS describing a generic stock photo."
     )
 
-    prompt = f"Topic: {topic}\nSlide count: {slide_count}\nLanguage: {lang_map.get(language, 'O uzbek')}\nNotes: {user_notes or 'None'}"
+    synthesis_prompt = (
+        f"Topic: {topic}\n"
+        f"Exact Slides Count Needed: {slide_count}\n"
+        f"Language: {target_language}\n"
+        f"User Custom Instructions: {user_notes or 'None'}\n\n"
+        f"Verified Facts Context:\n{research_context[:3000]}"
+    )
 
-    res = client.models.generate_content(
+    response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=prompt,
+        contents=synthesis_prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
             response_mime_type="application/json",
             response_schema=MasterpiecePresentation,
             temperature=0.2
-        )
+        ),
     )
-    return res.parsed
+    return response.parsed
 
-def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.pptx", custom_img_bytes: bytes | None = None) -> str:
+# ----------------- POWERPOINT BUILDER -----------------
+def create_pptx_file(
+    plan: MasterpiecePresentation,
+    output_path: str = "output.pptx",
+    custom_img_bytes: bytes | None = None
+) -> str:
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
@@ -148,7 +241,7 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
         bg.fill.fore_color.rgb = theme["dark_bg"]
         bg.line.fill.background()
 
-        # ---------------- 1. TITLE SLIDE ----------------
+        # 1. TITLE SLIDE
         if s.layout_type == "title":
             bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.0), Inches(2.0), Inches(0.1), Inches(3.2))
             bar.fill.solid()
@@ -180,7 +273,7 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
                 ps.font.color.rgb = theme["text_muted"]
             continue
 
-        # ---------------- HEADER FOR CONTENT SLIDES ----------------
+        # HEADER FOR CONTENT SLIDES
         hb = slide.shapes.add_textbox(Inches(0.8), Inches(0.5), Inches(11.0), Inches(1.2))
         hf = hb.text_frame
         hf.word_wrap = True
@@ -198,7 +291,7 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
         ht.font.bold = True
         ht.font.color.rgb = theme["text_main"]
 
-        # ---------------- 2. CARDS GRID ----------------
+        # 2. CARDS GRID
         if s.layout_type == "cards_grid":
             items = s.cards[:3] if s.cards else [
                 PillarCard(number=f"0{i+1}", title=f"Aspekt {i+1}", desc=b)
@@ -238,7 +331,7 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
                 p2.font.size = Pt(15)
                 p2.font.color.rgb = theme["text_muted"]
 
-        # ---------------- 3. STATS ROW ----------------
+        # 3. STATS ROW
         elif s.layout_type == "stats_row":
             m_items = s.metrics[:3] if s.metrics else [
                 MetricBox(value="85%", title="O'SISH", desc="Yillik ijobiy dinamika"),
@@ -279,11 +372,9 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
                 pd.font.size = Pt(14)
                 pd.font.color.rgb = theme["text_muted"]
 
-        # ---------------- 4. SPLIT IMAGE LAYOUT ----------------
+        # 4. SPLIT IMAGE LAYOUT
         elif s.layout_type == "split_image":
             img_io = fetch_image_secure(s.ai_image_prompt or s.title, custom_img_bytes)
-
-            # If image exists, make 50/50 split; otherwise, use full width for text
             text_width = Inches(6.0) if img_io else Inches(11.7)
 
             tb = slide.shapes.add_textbox(Inches(0.8), Inches(1.9), text_width, Inches(4.3))
@@ -303,7 +394,7 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
                 except Exception:
                     pass
 
-        # ---------------- 5. CLOSING SLIDE ----------------
+        # 5. CLOSING SLIDE
         elif s.layout_type == "closing":
             box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.0), Inches(1.9), Inches(11.3), Inches(4.3))
             box.fill.solid()
@@ -344,3 +435,44 @@ def create_pptx_file(plan: MasterpiecePresentation, output_path: str = "output.p
 
     prs.save(output_path)
     return output_path
+
+# ----------------- TELEGRAM PREVIEW CARD GENERATOR -----------------
+def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = "preview.png") -> str:
+    W, H = 1200, 675
+    img = Image.new("RGB", (W, H), color=(10, 15, 29))
+    draw = ImageDraw.Draw(img)
+
+    # Accent top border
+    draw.rectangle([(0, 0), (W, 10)], fill=(56, 189, 248))
+
+    try:
+        font_large = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
+        font_sub = ImageFont.truetype("DejaVuSans.ttf", 20)
+        font_tag = ImageFont.truetype("DejaVuSans-Bold.ttf", 15)
+    except Exception:
+        font_large = ImageFont.load_default()
+        font_sub = ImageFont.load_default()
+        font_tag = ImageFont.load_default()
+
+    draw.text((70, 65), f"EXECUTIVE SUITE  •  {len(plan.slides)} SLIDES READY", fill=(56, 189, 248), font=font_tag)
+
+    title_text = plan.topic.upper()
+    if len(title_text) > 42:
+        title_text = title_text[:39] + "..."
+    draw.text((70, 105), title_text, fill=(248, 250, 252), font=font_large)
+
+    card_w, card_h = 330, 370
+    y_card, gap = 210, 35
+
+    for i, s in enumerate(plan.slides[:3]):
+        x_card = 70 + i * (card_w + gap)
+        draw.rounded_rectangle([(x_card, y_card), (x_card + card_w, y_card + card_h)], radius=12, fill=(19, 29, 53), outline=(38, 56, 96), width=2)
+        draw.rounded_rectangle([(x_card + 20, y_card + 20), (x_card + 75, y_card + 50)], radius=6, fill=(12, 74, 110))
+        draw.text((x_card + 32, y_card + 25), f"{s.slide_number:02d}", fill=(255, 255, 255), font=font_tag)
+
+        s_title = s.title if len(s.title) < 26 else s.title[:23] + "..."
+        draw.text((x_card + 20, y_card + 75), s_title, fill=(248, 250, 252), font=font_tag)
+        draw.text((x_card + 20, y_card + 115), f"Layout: {s.layout_type}", fill=(165, 180, 205), font=font_sub)
+
+    img.save(output_img_path)
+    return output_img_path
