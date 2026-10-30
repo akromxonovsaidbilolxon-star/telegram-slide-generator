@@ -90,7 +90,7 @@ async def process_topic(message: types.Message, state: FSMContext):
     await message.answer(
         f"📝 Mavzu: *{topic}*\n\n"
         "Agar slaydga o'zingizning rasmingizni yoki maxsus reja/talablarni kiritmoqchi bo'lsangiz, "
-        "hozir rasm yoki matn yuboring.\n\n"
+        "hozir rasm yoki reja matnini (REJA) yuboring.\n\n"
         "Agar shart bo'lmasa, quyidagi tugmani bosing:",
         parse_mode="Markdown",
         reply_markup=get_skip_kb()
@@ -120,7 +120,7 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
     slide_count = user_data.get("slide_count", 10)
     language = user_data.get("language", "uz")
 
-    status_msg = await message.answer(f"⏳ {slide_count} ta slayd, mos rasmlar va ma'lumotlar tahlil qilinmoqda...")
+    status_msg = await message.answer(f"⏳ Taqdimot, reja asosidagi slaydlar va tahlillar tayyorlanmoqda...")
 
     uid = message.from_user.id
     pptx_path = f"pres_{uid}.pptx"
@@ -147,7 +147,7 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
         doc = FSInputFile(pptx_path, filename=f"{topic[:25].replace(' ', '_')}.pptx")
         await message.answer_document(
             document=doc,
-            caption=f"✅ *{len(plan.slides)} ta* slaydli premium taqdimot tayyor!\nYangi taqdimot yaratish uchun /start ni bosing.",
+            caption=f"✅ *{len(plan.slides)} ta* slaydli taqdimot tayyor!\nYangi taqdimot yaratish uchun /start ni bosing.",
             parse_mode="Markdown"
         )
     except Exception as err:
