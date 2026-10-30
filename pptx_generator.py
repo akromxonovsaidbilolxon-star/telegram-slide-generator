@@ -1,7 +1,6 @@
 import os
 import io
 import urllib.parse
-import random
 import requests
 from PIL import Image, ImageDraw, ImageFont
 from google import genai
@@ -14,8 +13,8 @@ from pptx.enum.shapes import MSO_SHAPE
 from pydantic import BaseModel, Field
 
 # ----------------- THEMES & PALETTES -----------------
-PALETTES = [
-    {
+THEMES = {
+    "obsidian": {
         "name": "Obsidian Cyan",
         "dark_bg": RGBColor(10, 15, 29),
         "card_bg": RGBColor(19, 29, 53),
@@ -25,18 +24,8 @@ PALETTES = [
         "accent": RGBColor(56, 189, 248),
         "accent_light": RGBColor(12, 74, 110)
     },
-    {
-        "name": "Deep Purple",
-        "dark_bg": RGBColor(15, 12, 34),
-        "card_bg": RGBColor(30, 24, 66),
-        "card_border": RGBColor(60, 48, 120),
-        "text_main": RGBColor(255, 255, 255),
-        "text_muted": RGBColor(185, 175, 225),
-        "accent": RGBColor(192, 132, 252),
-        "accent_light": RGBColor(88, 28, 135)
-    },
-    {
-        "name": "Nordic Teal",
+    "emerald": {
+        "name": "Nordic Emerald",
         "dark_bg": RGBColor(6, 20, 24),
         "card_bg": RGBColor(13, 37, 44),
         "card_border": RGBColor(21, 58, 69),
@@ -44,10 +33,20 @@ PALETTES = [
         "text_muted": RGBColor(148, 175, 185),
         "accent": RGBColor(45, 212, 191),
         "accent_light": RGBColor(19, 78, 74)
+    },
+    "purple": {
+        "name": "Deep Royal Purple",
+        "dark_bg": RGBColor(15, 12, 34),
+        "card_bg": RGBColor(30, 24, 66),
+        "card_border": RGBColor(60, 48, 120),
+        "text_main": RGBColor(255, 255, 255),
+        "text_muted": RGBColor(185, 175, 225),
+        "accent": RGBColor(192, 132, 252),
+        "accent_light": RGBColor(88, 28, 135)
     }
-]
+}
 
-# ----------------- PYDANTIC SCHEMAS -----------------
+# ----------------- SCHEMAS -----------------
 class MetricBox(BaseModel):
     value: str = Field(description="Display stat, e.g. '1.6B', '88%', '$50B'")
     title: str = Field(description="Short label, max 3 words")
@@ -74,8 +73,45 @@ class SlideContent(BaseModel):
 class MasterpiecePresentation(BaseModel):
     topic: str
     language: str
+    theme_key: str = "obsidian"
     total_slides: int
     slides: list[SlideContent]
+
+class OutlineProposal(BaseModel):
+    variant_a_title: str = Field(description="Short title of strategy A, e.g. 'Akademik va Nazariy Tahlil'")
+    variant_a_points: list[str] = Field(description="List of slide titles for Option A")
+    variant_b_title: str = Field(description="Short title of strategy B, e.g. 'Amaliy va Innovatsion Yondashuv'")
+    variant_b_points: list[str] = Field(description="List of slide titles for Option B")
+
+# ----------------- AI BRAINSTORMING HELPER -----------------
+def generate_outline_options(topic: str, slide_count: int, audience_type: str, language: str = "uz") -> OutlineProposal:
+    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
+    lang_map = {
+        "uz": "O'zbek tili",
+        "ru": "Русский язык",
+        "en": "English"
+    }
+
+    prompt = (
+        f"Mavzu: '{topic}'. Slaydlar soni: {slide_count}. Auditoriya yo'nalishi: {audience_type}.\n"
+        f"Foydalanuvchi taqdimotni qanday boshlash va rejalashtirishni bilmayapti.\n"
+        f"Unga aynan {slide_count} ta slayddan iborat ikkita (Variant A va Variant B) "
+        f"mantiqiy, chuqur va professional reja taklif qil. "
+        f"Har ikkala variantdagi bandlar soni aniq {slide_count} ta bo'lsin. "
+        f"Til: {lang_map.get(language, 'O uzbek')}."
+    )
+
+    res = client.models.generate_content(
+        model="gemini-3.8-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=OutlineProposal,
+            temperature=0.3
+        )
+    )
+    return res.parsed
 
 # ----------------- IMAGE RETRIEVAL WITH MULTI-PROVIDER FALLBACK -----------------
 def fetch_image_secure(prompt: str | None, custom_bytes: bytes | None = None) -> io.BytesIO | None:
@@ -158,7 +194,8 @@ def generate_presentation_json(
     topic: str,
     slide_count: int = 10,
     language: str = "uz",
-    user_notes: str | None = None
+    user_notes: str | None = None,
+    theme_key: str = "obsidian"
 ) -> MasterpiecePresentation:
     api_key = os.environ.get("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
@@ -170,7 +207,6 @@ def generate_presentation_json(
     }
     target_language = lang_map.get(language, "O'zbek tili")
 
-    # Step 1: Research with Google Search Grounding
     research_context = ""
     try:
         research_prompt = (
@@ -190,7 +226,7 @@ def generate_presentation_json(
     except Exception as e:
         print(f"[Search Warning]: {e}")
 
-    # Step 2: Detect custom numbered plan / reja
+    # Detect user outline count
     outline_lines = [l for l in (user_notes or "").split("\n") if any(l.strip().startswith(f"{i}.") for i in range(1, 25))]
     target_count = len(outline_lines) if len(outline_lines) >= 5 else slide_count
 
@@ -198,7 +234,7 @@ def generate_presentation_json(
         f"You are an executive slide architect. You MUST generate EXACTLY {target_count} slides in the 'slides' array. "
         "Keep text concise, punchy, and readable on mobile devices. "
         "Never make headlines exceed 40 characters. "
-        "If the user provided an outline or plan (Reja), map each numbered item sequentially into its own slide.\n"
+        "If the user provided an outline or plan, map each point sequentially into its own slide.\n"
         f"- Slide 1 MUST be 'title'.\n"
         f"- Slide {target_count} MUST be 'closing'.\n"
         "- Intermediary slides must alternate between 'cards_grid', 'stats_row', and 'split_image'.\n"
@@ -209,7 +245,8 @@ def generate_presentation_json(
         f"Topic: {topic}\n"
         f"Required Exact Slides Count: {target_count}\n"
         f"Language: {target_language}\n"
-        f"User Provided Plan / Custom Outline:\n{user_notes or 'None'}\n\n"
+        f"Theme Chosen: {theme_key}\n"
+        f"User Plan / Outline:\n{user_notes or 'Standard presentation'}\n\n"
         f"Research Context:\n{research_context[:3000]}"
     )
 
@@ -223,7 +260,9 @@ def generate_presentation_json(
             temperature=0.2
         ),
     )
-    return response.parsed
+    result = response.parsed
+    result.theme_key = theme_key
+    return result
 
 # ----------------- POWERPOINT BUILDER -----------------
 def create_pptx_file(
@@ -235,13 +274,12 @@ def create_pptx_file(
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
 
-    theme = random.choice(PALETTES)
+    theme = THEMES.get(plan.theme_key, THEMES["obsidian"])
     blank_layout = prs.slide_layouts[6]
 
     for s in plan.slides:
         slide = prs.slides.add_slide(blank_layout)
 
-        # Full Slide Background
         bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(13.333), Inches(7.5))
         bg.fill.solid()
         bg.fill.fore_color.rgb = theme["dark_bg"]
@@ -431,7 +469,6 @@ def create_pptx_file(
                 p3.font.size = Pt(18)
                 p3.font.color.rgb = theme["text_muted"]
 
-        # Footer citation
         if s.source_citation:
             fc = slide.shapes.add_textbox(Inches(0.8), Inches(6.8), Inches(11.7), Inches(0.4))
             fp = fc.text_frame.paragraphs[0]
@@ -445,10 +482,17 @@ def create_pptx_file(
 # ----------------- TELEGRAM PREVIEW CARD GENERATOR -----------------
 def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = "preview.png") -> str:
     W, H = 1200, 675
-    img = Image.new("RGB", (W, H), color=(10, 15, 29))
+    theme = THEMES.get(plan.theme_key, THEMES["obsidian"])
+    
+    bg_tuple = (theme["dark_bg"][0], theme["dark_bg"][1], theme["dark_bg"][2])
+    card_tuple = (theme["card_bg"][0], theme["card_bg"][1], theme["card_bg"][2])
+    border_tuple = (theme["card_border"][0], theme["card_border"][1], theme["card_border"][2])
+    accent_tuple = (theme["accent"][0], theme["accent"][1], theme["accent"][2])
+
+    img = Image.new("RGB", (W, H), color=bg_tuple)
     draw = ImageDraw.Draw(img)
 
-    draw.rectangle([(0, 0), (W, 10)], fill=(56, 189, 248))
+    draw.rectangle([(0, 0), (W, 10)], fill=accent_tuple)
 
     try:
         font_large = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
@@ -459,7 +503,7 @@ def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = 
         font_sub = ImageFont.load_default()
         font_tag = ImageFont.load_default()
 
-    draw.text((70, 65), f"EXECUTIVE SUITE  •  {len(plan.slides)} SLIDES READY", fill=(56, 189, 248), font=font_tag)
+    draw.text((70, 65), f"AKADEMIX AI  •  {len(plan.slides)} SLIDES READY", fill=accent_tuple, font=font_tag)
 
     title_text = plan.topic.upper()
     if len(title_text) > 42:
@@ -471,8 +515,8 @@ def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = 
 
     for i, s in enumerate(plan.slides[:3]):
         x_card = 70 + i * (card_w + gap)
-        draw.rounded_rectangle([(x_card, y_card), (x_card + card_w, y_card + card_h)], radius=12, fill=(19, 29, 53), outline=(38, 56, 96), width=2)
-        draw.rounded_rectangle([(x_card + 20, y_card + 20), (x_card + 75, y_card + 50)], radius=6, fill=(12, 74, 110))
+        draw.rounded_rectangle([(x_card, y_card), (x_card + card_w, y_card + card_h)], radius=12, fill=card_tuple, outline=border_tuple, width=2)
+        draw.rounded_rectangle([(x_card + 20, y_card + 20), (x_card + 75, y_card + 50)], radius=6, fill=accent_tuple)
         draw.text((x_card + 32, y_card + 25), f"{s.slide_number:02d}", fill=(255, 255, 255), font=font_tag)
 
         s_title = s.title if len(s.title) < 26 else s.title[:23] + "..."
