@@ -5,6 +5,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.client.session.aiohttp import AiohttpSession
 from pptx_generator import (
     generate_presentation_json,
     create_pptx_file,
@@ -14,7 +15,8 @@ from pptx_generator import (
 )
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-bot = Bot(token=TOKEN)
+session = AiohttpSession(timeout=60.0)
+bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
 
 class Form(StatesGroup):
@@ -122,8 +124,9 @@ async def process_topic(message: types.Message, state: FSMContext):
 async def choose_express(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.edit_text(
-        "📝 O'z rejangiz (REJA), shaxsiy rasmingiz yoki maxsus talablaringizni yuboring.\n\n"
-        "Agar shart bo'lmasa, quyidagi tugmani bosing:",
+        "📝 O'z rejangiz (REJA), shaxsiy rasmingiz yoki matnni yuboring.\n\n"
+        "Agar rasm qo'shmoqchi bo'lsangiz, rasmni hozir yuboring (izohiga rejangizni yozishingiz ham mumkin):\n\n"
+        "Agar qo'shimchasiz davom etmoqchi bo'lsangiz, tugmani bosing:",
         reply_markup=get_skip_kb()
     )
     await state.set_state(Form.waiting_custom_content)
@@ -154,7 +157,6 @@ async def process_audience(callback: types.CallbackQuery, state: FSMContext):
     try:
         proposals: OutlineProposal = generate_outline_options(topic, count, aud_type, lang)
         
-        # Save proposals in state
         await state.update_data(
             plan_a="\n".join([f"{i+1}. {p}" for i, p in enumerate(proposals.variant_a_points)]),
             plan_b="\n".join([f"{i+1}. {p}" for i, p in enumerate(proposals.variant_b_points)])
@@ -182,7 +184,7 @@ async def process_audience(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(Form.reviewing_outlines, F.data.startswith("pick_plan_"))
 async def select_plan(callback: types.CallbackQuery, state: FSMContext):
-    choice = callback.data.split("_")[-1]  # 'a' or 'b'
+    choice = callback.data.split("_")[-1]
     user_data = await state.get_data()
     chosen_plan = user_data.get("plan_a") if choice == "a" else user_data.get("plan_b")
     await state.update_data(final_plan=chosen_plan)
@@ -212,11 +214,15 @@ async def skip_custom(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(Form.waiting_custom_content, F.photo)
 async def receive_custom_photo(message: types.Message, state: FSMContext):
+    # Download highest-res photo
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
-    photo_bytes = (await bot.download_file(file.file_path)).read()
+    photo_stream = io.BytesIO()
+    await bot.download_file(file.file_path, photo_stream)
+    photo_bytes = photo_stream.getvalue()
+    
     caption = message.caption or ""
-    await run_generation(message, state, custom_img_bytes=photo_bytes, custom_notes=caption)
+    await run_generation(message, state, custom_img_bytes=photo_bytes, custom_notes=caption if caption else None)
 
 @dp.message(Form.waiting_custom_content, F.text)
 async def receive_custom_notes(message: types.Message, state: FSMContext):
@@ -230,7 +236,7 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
     language = user_data.get("language", "uz")
     theme_key = user_data.get("theme_key", "obsidian")
 
-    status_msg = await message.answer(f"⏳ Taqdimot, Google faktlari va rasmlar tayyorlanmoqda...")
+    status_msg = await message.answer(f"⏳ {slide_count} ta slayd, mos rasmlar va ma'lumotlar tahlil qilinmoqda...")
 
     uid = message.from_user.id
     pptx_path = f"pres_{uid}.pptx"
@@ -258,7 +264,7 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
         doc = FSInputFile(pptx_path, filename=f"{topic[:25].replace(' ', '_')}.pptx")
         await message.answer_document(
             document=doc,
-            caption=f"✅ *{len(plan.slides)} ta* slaydli taqdimot to'liq tayyor!\n\nYangi taqdimot uchun /start ni bosing.",
+            caption=f"✅ *{len(plan.slides)} ta* slaydli premium taqdimot tayyor!\nYangi taqdimot yaratish uchun /start ni bosing.",
             parse_mode="Markdown"
         )
     except Exception as err:
@@ -277,7 +283,8 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
         await state.clear()
 
 async def main():
-    await dp.start_polling(bot, drop_pending_updates=True)
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot, polling_timeout=30)
 
 if __name__ == "__main__":
     asyncio.run(main())
