@@ -44,7 +44,7 @@ def get_skip_kb() -> InlineKeyboardMarkup:
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 Assalomu alaykum! / Здравствуйте! / Hello!\n\n"
+        "👋 Assalomu alaykum!\n\n"
         "Taqdimot tilini tanlang:\n"
         "Выберите язык презентации:\n"
         "Select presentation language:",
@@ -90,7 +90,7 @@ async def process_topic(message: types.Message, state: FSMContext):
     await message.answer(
         f"📝 Mavzu: *{topic}*\n\n"
         "Agar slaydga o'zingizning rasmingizni yoki maxsus reja/talablarni kiritmoqchi bo'lsangiz, "
-        "hozir rasm yoki xabar yuboring.\n\n"
+        "hozir rasm yoki matn yuboring.\n\n"
         "Agar shart bo'lmasa, quyidagi tugmani bosing:",
         parse_mode="Markdown",
         reply_markup=get_skip_kb()
@@ -120,7 +120,7 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
     slide_count = user_data.get("slide_count", 10)
     language = user_data.get("language", "uz")
 
-    status_msg = await message.answer(f"⏳ {slide_count} ta slayd, 3D/AI rasmlar va rasmiy manbalar tahlil qilinmoqda...")
+    status_msg = await message.answer(f"⏳ {slide_count} ta slayd, mos rasmlar va ma'lumotlar tahlil qilinmoqda...")
 
     uid = message.from_user.id
     pptx_path = f"pres_{uid}.pptx"
@@ -134,7 +134,7 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
             user_notes=custom_notes
         )
 
-        create_pptx_file(plan, pptx_path, user_custom_image_bytes=custom_img_bytes)
+        create_pptx_file(plan, pptx_path, custom_img_bytes=custom_img_bytes)
         generate_preview_card(plan, preview_path)
 
         preview_file = FSInputFile(preview_path)
@@ -155,7 +155,10 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
     finally:
         for p in [pptx_path, preview_path]:
             if os.path.exists(p):
-                os.remove(p)
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
         try:
             await status_msg.delete()
         except Exception:
