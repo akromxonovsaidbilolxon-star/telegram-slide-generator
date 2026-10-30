@@ -49,8 +49,8 @@ PALETTES = [
 
 # ----------------- PYDANTIC SCHEMAS -----------------
 class MetricBox(BaseModel):
-    value: str = Field(description="e.g., '1.6B', '88%', '$50B', '10x'")
-    title: str = Field(description="Short label, max 3-4 words")
+    value: str = Field(description="Display stat, e.g. '1.6B', '88%', '$50B'")
+    title: str = Field(description="Short label, max 3 words")
     desc: str = Field(description="Brief 1-sentence explanation")
 
 class PillarCard(BaseModel):
@@ -69,7 +69,7 @@ class SlideContent(BaseModel):
     cards: list[PillarCard] = Field(default=[])
     metrics: list[MetricBox] = Field(default=[])
     takeaway_callout: str | None = None
-    ai_image_prompt: str | None = Field(default=None, description="2-3 simple English keywords for photo query")
+    ai_image_prompt: str | None = Field(default=None, description="2-3 simple English keywords for stock photo search")
 
 class MasterpiecePresentation(BaseModel):
     topic: str
@@ -142,7 +142,7 @@ def fetch_image_secure(prompt: str | None, custom_bytes: bytes | None = None) ->
         except Exception:
             pass
 
-    # 3. Fast Direct Photo Stream
+    # 3. Direct Photo Stream Fallback
     try:
         clean_seed = urllib.parse.quote_plus(clean_prompt)
         resp = requests.get(f"https://picsum.photos/seed/{clean_seed}/800/600", timeout=5)
@@ -170,45 +170,51 @@ def generate_presentation_json(
     }
     target_language = lang_map.get(language, "O'zbek tili")
 
-    # Research Step using Google Search
-    research_prompt = (
-        f"Search Google for real verified stats, authoritative reports, dates, and projections for: '{topic}'. "
-        f"User notes: {user_notes or 'None'}"
-    )
+    # Step 1: Research with Google Search Grounding
+    research_context = ""
     try:
+        research_prompt = (
+            f"Search Google for real verified stats, academic/economic literature, "
+            f"dates, and core insights on: '{topic}'. User plan/notes: {user_notes or 'None'}"
+        )
         search_res = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=research_prompt,
             config=types.GenerateContentConfig(
                 tools=[types.Tool(google_search=types.GoogleSearch())],
                 temperature=0.2
             )
         )
-        research_context = search_res.text if search_res and search_res.text else ""
+        if search_res and search_res.text:
+            research_context = search_res.text
     except Exception as e:
         print(f"[Search Warning]: {e}")
-        research_context = ""
+
+    # Step 2: Detect custom numbered plan / reja
+    outline_lines = [l for l in (user_notes or "").split("\n") if any(l.strip().startswith(f"{i}.") for i in range(1, 25))]
+    target_count = len(outline_lines) if len(outline_lines) >= 5 else slide_count
 
     system_instruction = (
-        f"You are an executive slide architect. You MUST generate EXACTLY {slide_count} slides in the 'slides' array. "
+        f"You are an executive slide architect. You MUST generate EXACTLY {target_count} slides in the 'slides' array. "
         "Keep text concise, punchy, and readable on mobile devices. "
-        "Never make headlines longer than 40 characters to avoid text overflow. "
+        "Never make headlines exceed 40 characters. "
+        "If the user provided an outline or plan (Reja), map each numbered item sequentially into its own slide.\n"
         f"- Slide 1 MUST be 'title'.\n"
-        f"- Slide {slide_count} MUST be 'closing'.\n"
+        f"- Slide {target_count} MUST be 'closing'.\n"
         "- Intermediary slides must alternate between 'cards_grid', 'stats_row', and 'split_image'.\n"
-        "CRITICAL: 'ai_image_prompt' MUST ALWAYS BE 2-3 ENGLISH KEYWORDS describing a generic stock photo."
+        "- 'ai_image_prompt' MUST be 2-3 simple English keywords describing a stock photo."
     )
 
     synthesis_prompt = (
         f"Topic: {topic}\n"
-        f"Exact Slides Count Needed: {slide_count}\n"
+        f"Required Exact Slides Count: {target_count}\n"
         f"Language: {target_language}\n"
-        f"User Custom Instructions: {user_notes or 'None'}\n\n"
-        f"Verified Facts Context:\n{research_context[:3000]}"
+        f"User Provided Plan / Custom Outline:\n{user_notes or 'None'}\n\n"
+        f"Research Context:\n{research_context[:3000]}"
     )
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=synthesis_prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_instruction,
@@ -442,7 +448,6 @@ def generate_preview_card(plan: MasterpiecePresentation, output_img_path: str = 
     img = Image.new("RGB", (W, H), color=(10, 15, 29))
     draw = ImageDraw.Draw(img)
 
-    # Accent top border
     draw.rectangle([(0, 0), (W, 10)], fill=(56, 189, 248))
 
     try:
