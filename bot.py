@@ -1,7 +1,6 @@
 import os
 import io
 import asyncio
-import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -18,9 +17,8 @@ from pptx_generator import (
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-# Total timeout (35s) must be larger than polling timeout (20s)
-client_timeout = aiohttp.ClientTimeout(total=35.0, connect=10.0, sock_read=30.0)
-session = AiohttpSession(timeout=client_timeout)
+# Simple float timeout (35 seconds) so aiogram can calculate request_timeout properly
+session = AiohttpSession(timeout=35.0)
 bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
 
@@ -289,7 +287,8 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
 # ----------------- APPLICATION ENTRYPOINT -----------------
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot, polling_timeout=20, handle_signals=False)
+    # Default polling parameters
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
