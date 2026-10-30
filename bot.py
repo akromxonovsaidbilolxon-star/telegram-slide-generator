@@ -5,7 +5,13 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
-from pptx_generator import generate_presentation_json, create_pptx_file, generate_preview_card
+from pptx_generator import (
+    generate_presentation_json,
+    create_pptx_file,
+    generate_preview_card,
+    generate_outline_options,
+    OutlineProposal
+)
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = Bot(token=TOKEN)
@@ -15,6 +21,10 @@ class Form(StatesGroup):
     choosing_language = State()
     choosing_count = State()
     entering_topic = State()
+    choosing_workflow = State()     # Express vs Brainstorm
+    choosing_audience = State()     # Academic vs Business vs Report
+    reviewing_outlines = State()    # Pick Variant A or B
+    choosing_theme = State()        # Obsidian vs Emerald vs Purple
     waiting_custom_content = State()
 
 def get_language_kb() -> InlineKeyboardMarkup:
@@ -32,6 +42,30 @@ def get_count_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="5 ta slayd", callback_data="count_5"),
             InlineKeyboardButton(text="10 ta slayd", callback_data="count_10"),
             InlineKeyboardButton(text="16 ta slayd (Full)", callback_data="count_16"),
+        ]
+    ])
+
+def get_workflow_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚡ Tayyor rejam bor (Tezkor)", callback_data="wf_express")],
+        [InlineKeyboardButton(text="💡 Rejam yo'q, yordam bering (AI Maslahatchi)", callback_data="wf_brainstorm")]
+    ])
+
+def get_audience_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎓 Akademik / Dars / Diplom", callback_data="aud_academic")],
+        [InlineKeyboardButton(text="💼 Biznes / Startap / Pitch", callback_data="aud_business")],
+        [InlineKeyboardButton(text="📊 Tahliliy / Rasmiy hisobot", callback_data="aud_report")]
+    ])
+
+def get_theme_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🌌 Obsidian Cyan", callback_data="theme_obsidian"),
+            InlineKeyboardButton(text="🌿 Nordic Emerald", callback_data="theme_emerald"),
+        ],
+        [
+            InlineKeyboardButton(text="👑 Deep Purple", callback_data="theme_purple")
         ]
     ])
 
@@ -57,12 +91,7 @@ async def process_language(callback: types.CallbackQuery, state: FSMContext):
     lang_code = callback.data.split("_")[1]
     await state.update_data(language=lang_code)
 
-    captions = {
-        "uz": "📊 Slaydlar sonini tanlang (10 yoki 16 ta to'liq slayd):",
-        "ru": "📊 Выберите точное количество слайдов (10 или 16 слайдов):",
-        "en": "📊 Select total number of slides (10 or 16 full deck):"
-    }
-    await callback.message.edit_text(captions.get(lang_code, captions["uz"]), reply_markup=get_count_kb())
+    await callback.message.edit_text("📊 Slaydlar sonini tanlang:", reply_markup=get_count_kb())
     await state.set_state(Form.choosing_count)
     await callback.answer()
 
@@ -70,15 +99,8 @@ async def process_language(callback: types.CallbackQuery, state: FSMContext):
 async def process_count(callback: types.CallbackQuery, state: FSMContext):
     count = int(callback.data.split("_")[1])
     await state.update_data(slide_count=count)
-    user_data = await state.get_data()
-    lang = user_data.get("language", "uz")
 
-    messages = {
-        "uz": f"✅ {count} ta slayd tanlandi.\n\nEndi taqdimot mavzusini yozib yuboring:",
-        "ru": f"✅ Выбрано {count} слайдов.\n\nТеперь введите тему презентации:",
-        "en": f"✅ {count} slides selected.\n\nNow enter your presentation topic:"
-    }
-    await callback.message.edit_text(messages.get(lang, messages["uz"]))
+    await callback.message.edit_text(f"✅ {count} ta slayd tanlandi.\n\nEndi taqdimot mavzusini yozib yuboring:")
     await state.set_state(Form.entering_topic)
     await callback.answer()
 
@@ -88,15 +110,101 @@ async def process_topic(message: types.Message, state: FSMContext):
     await state.update_data(topic=topic)
 
     await message.answer(
-        f"📝 Mavzu: *{topic}*\n\n"
-        "Agar slaydga o'zingizning rasmingizni yoki maxsus reja/talablarni kiritmoqchi bo'lsangiz, "
-        "hozir rasm yoki reja matnini (REJA) yuboring.\n\n"
-        "Agar shart bo'lmasa, quyidagi tugmani bosing:",
+        f"🎯 Mavzu: *{topic}*\n\n"
+        "Sizda tayyor reja bormi yoki g'oyani birgalikda shakllantiramizmi?",
         parse_mode="Markdown",
+        reply_markup=get_workflow_kb()
+    )
+    await state.set_state(Form.choosing_workflow)
+
+# ----------------- EXPRESS WORKFLOW -----------------
+@dp.callback_query(Form.choosing_workflow, F.data == "wf_express")
+async def choose_express(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "📝 O'z rejangiz (REJA), shaxsiy rasmingiz yoki maxsus talablaringizni yuboring.\n\n"
+        "Agar shart bo'lmasa, quyidagi tugmani bosing:",
         reply_markup=get_skip_kb()
     )
     await state.set_state(Form.waiting_custom_content)
 
+# ----------------- AI BRAINSTORMING WORKFLOW -----------------
+@dp.callback_query(Form.choosing_workflow, F.data == "wf_brainstorm")
+async def choose_brainstorm(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "💡 Taqdimot kim uchun mo'ljallangan? Yo'nalishni tanlang:",
+        reply_markup=get_audience_kb()
+    )
+    await state.set_state(Form.choosing_audience)
+
+@dp.callback_query(Form.choosing_audience, F.data.startswith("aud_"))
+async def process_audience(callback: types.CallbackQuery, state: FSMContext):
+    aud_type = callback.data.split("_")[1]
+    await state.update_data(audience_type=aud_type)
+    await callback.answer()
+
+    user_data = await state.get_data()
+    topic = user_data.get("topic")
+    count = user_data.get("slide_count", 10)
+    lang = user_data.get("language", "uz")
+
+    wait_msg = await callback.message.edit_text("🤖 Siz uchun 2 xil professional reja varianti shakllantirilmoqda...")
+
+    try:
+        proposals: OutlineProposal = generate_outline_options(topic, count, aud_type, lang)
+        
+        # Save proposals in state
+        await state.update_data(
+            plan_a="\n".join([f"{i+1}. {p}" for i, p in enumerate(proposals.variant_a_points)]),
+            plan_b="\n".join([f"{i+1}. {p}" for i, p in enumerate(proposals.variant_b_points)])
+        )
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔹 Variant A ni tanlash", callback_data="pick_plan_a")],
+            [InlineKeyboardButton(text="🔸 Variant B ni tanlash", callback_data="pick_plan_b")]
+        ])
+
+        msg_text = (
+            f"🎯 *Mavzu:* {topic}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"🔹 *Variant A: {proposals.variant_a_title}*\n"
+            + "\n".join([f"• {p}" for p in proposals.variant_a_points[:5]]) + "\n...\n\n"
+            f"🔸 *Variant B: {proposals.variant_b_title}*\n"
+            + "\n".join([f"• {p}" for p in proposals.variant_b_points[:5]]) + "\n..."
+            f"\n━━━━━━━━━━━━━━━━━━━\n"
+            f"Qaysi reja ma'qul keldi?"
+        )
+        await wait_msg.edit_text(msg_text, parse_mode="Markdown", reply_markup=kb)
+        await state.set_state(Form.reviewing_outlines)
+    except Exception as e:
+        await callback.message.edit_text(f"❌ Xatolik yuz berdi: {str(e)}\nIltimos /start orqali qayta urinib ko'ring.")
+
+@dp.callback_query(Form.reviewing_outlines, F.data.startswith("pick_plan_"))
+async def select_plan(callback: types.CallbackQuery, state: FSMContext):
+    choice = callback.data.split("_")[-1]  # 'a' or 'b'
+    user_data = await state.get_data()
+    chosen_plan = user_data.get("plan_a") if choice == "a" else user_data.get("plan_b")
+    await state.update_data(final_plan=chosen_plan)
+    await callback.answer()
+
+    await callback.message.edit_text(
+        "🎨 Taqdimot dizayn uslubini tanlang:",
+        reply_markup=get_theme_kb()
+    )
+    await state.set_state(Form.choosing_theme)
+
+@dp.callback_query(Form.choosing_theme, F.data.startswith("theme_"))
+async def select_theme(callback: types.CallbackQuery, state: FSMContext):
+    theme_key = callback.data.split("_")[1]
+    await state.update_data(theme_key=theme_key)
+    await callback.answer()
+
+    user_data = await state.get_data()
+    final_plan = user_data.get("final_plan")
+    await run_generation(callback.message, state, custom_img_bytes=None, custom_notes=final_plan)
+
+# ----------------- EXPRESS INPUT RECEIVERS -----------------
 @dp.callback_query(Form.waiting_custom_content, F.data == "skip_custom")
 async def skip_custom(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -114,13 +222,15 @@ async def receive_custom_photo(message: types.Message, state: FSMContext):
 async def receive_custom_notes(message: types.Message, state: FSMContext):
     await run_generation(message, state, custom_img_bytes=None, custom_notes=message.text)
 
+# ----------------- CORE GENERATION CONTROLLER -----------------
 async def run_generation(message: types.Message, state: FSMContext, custom_img_bytes=None, custom_notes=None):
     user_data = await state.get_data()
     topic = user_data.get("topic")
     slide_count = user_data.get("slide_count", 10)
     language = user_data.get("language", "uz")
+    theme_key = user_data.get("theme_key", "obsidian")
 
-    status_msg = await message.answer(f"⏳ Taqdimot, reja asosidagi slaydlar va tahlillar tayyorlanmoqda...")
+    status_msg = await message.answer(f"⏳ Taqdimot, Google faktlari va rasmlar tayyorlanmoqda...")
 
     uid = message.from_user.id
     pptx_path = f"pres_{uid}.pptx"
@@ -131,7 +241,8 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
             topic=topic,
             slide_count=slide_count,
             language=language,
-            user_notes=custom_notes
+            user_notes=custom_notes,
+            theme_key=theme_key
         )
 
         create_pptx_file(plan, pptx_path, custom_img_bytes=custom_img_bytes)
@@ -147,7 +258,7 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
         doc = FSInputFile(pptx_path, filename=f"{topic[:25].replace(' ', '_')}.pptx")
         await message.answer_document(
             document=doc,
-            caption=f"✅ *{len(plan.slides)} ta* slaydli taqdimot tayyor!\nYangi taqdimot yaratish uchun /start ni bosing.",
+            caption=f"✅ *{len(plan.slides)} ta* slaydli taqdimot to'liq tayyor!\n\nYangi taqdimot uchun /start ni bosing.",
             parse_mode="Markdown"
         )
     except Exception as err:
