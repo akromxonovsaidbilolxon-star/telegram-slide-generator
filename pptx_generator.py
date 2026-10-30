@@ -106,7 +106,6 @@ def generate_outline_options(topic: str, slide_count: int, audience_type: str, l
 
 # ----------------- SMART IMAGE FETCHER (TOPIC-ACCURATE) -----------------
 def fetch_image_secure(prompt: str | None, custom_bytes: bytes | None = None) -> io.BytesIO | None:
-    # 1. Prioritize user's own uploaded picture if available
     if custom_bytes:
         try:
             return io.BytesIO(custom_bytes)
@@ -118,7 +117,7 @@ def fetch_image_secure(prompt: str | None, custom_bytes: bytes | None = None) ->
 
     clean_q = " ".join(prompt.strip().replace("-", " ").split()[:3])
 
-    # 2. Try Google Custom Search (Image)
+    # 1. Google Custom Search
     api_key = os.environ.get("GOOGLE_SEARCH_API_KEY")
     cx = os.environ.get("GOOGLE_CSE_ID")
     if api_key and cx:
@@ -149,7 +148,7 @@ def fetch_image_secure(prompt: str | None, custom_bytes: bytes | None = None) ->
         except Exception:
             pass
 
-    # 3. Try Pixabay
+    # 2. Pixabay API
     pix_key = os.environ.get("PIXABAY_API_KEY")
     if pix_key:
         try:
@@ -170,7 +169,7 @@ def fetch_image_secure(prompt: str | None, custom_bytes: bytes | None = None) ->
         except Exception:
             pass
 
-    # 4. Fallback: Fast AI Generation with Pollinations Flux
+    # 3. Direct AI Visual Fallback (Pollinations Flux)
     try:
         encoded = urllib.parse.quote_plus(f"{clean_q} cinematic professional 8k")
         url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=640&model=flux&nologo=true"
@@ -222,7 +221,7 @@ def generate_presentation_json(
     except Exception as e:
         print(f"[Search Warning]: {e}")
 
-    # Check if user passed a numbered list (Reja)
+    # Check if user provided numbered items (Reja)
     outline_lines = [l for l in (user_notes or "").split("\n") if any(l.strip().startswith(f"{i}.") for i in range(1, 30))]
     target_count = len(outline_lines) if len(outline_lines) >= 4 else slide_count
 
@@ -231,9 +230,9 @@ def generate_presentation_json(
         "CRITICAL RULES TO AVOID EMPTY CARDS:\n"
         "1. For 'cards_grid' layout, you MUST ALWAYS provide EXACTLY 3 cards inside the 'cards' list. Never leave it empty or with only 1 card.\n"
         "2. For 'stats_row' layout, you MUST ALWAYS provide EXACTLY 3 metrics inside the 'metrics' list.\n"
-        "3. For 'split_image' layout, provide 3 to 4 detailed bullet points, AND provide an English 'ai_image_prompt' directly relevant to the slide topic (e.g. 'stock market exchange board', 'industrial automation robot', 'central bank building').\n"
+        "3. For 'split_image' layout, provide 3 to 4 detailed bullet points, AND provide an English 'ai_image_prompt' directly relevant to the slide topic.\n"
         "4. Slide 1 MUST be 'title', and Slide {target_count} MUST be 'closing'.\n"
-        "5. Keep headlines short (under 35 chars) so they don't break on mobile screens."
+        "5. Keep headlines short (under 35 chars) to prevent line breaks on mobile screens."
     )
 
     synthesis_prompt = (
@@ -281,7 +280,7 @@ def create_pptx_file(
         bg.fill.fore_color.rgb = theme["dark_bg"]
         bg.line.fill.background()
 
-        # ---------------- 1. TITLE SLIDE ----------------
+        # 1. TITLE SLIDE
         if s.layout_type == "title":
             bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.0), Inches(2.2), Inches(0.12), Inches(3.0))
             bar.fill.solid()
@@ -313,7 +312,7 @@ def create_pptx_file(
                 ps.font.color.rgb = theme["text_muted"]
             continue
 
-        # ---------------- HEADER FOR ALL OTHER SLIDES ----------------
+        # HEADER FOR ALL OTHER SLIDES
         hb = slide.shapes.add_textbox(Inches(0.8), Inches(0.5), Inches(11.0), Inches(1.1))
         hf = hb.text_frame
         hf.word_wrap = True
@@ -343,10 +342,9 @@ def create_pptx_file(
         np.font.color.rgb = theme["accent"]
         np.alignment = PP_ALIGN.CENTER
 
-        # ---------------- 2. CARDS GRID (NO EMPTY BOXES) ----------------
+        # 2. CARDS GRID
         if s.layout_type == "cards_grid":
             items = list(s.cards) if s.cards else []
-            # Fill fallback items if Gemini provided fewer than 3
             default_labels = ["Asosiy Tamoyil", "Tahliliy Yondashuv", "Amaliy Natija"]
             while len(items) < 3:
                 idx = len(items)
@@ -390,7 +388,7 @@ def create_pptx_file(
                 p2.font.size = Pt(14)
                 p2.font.color.rgb = theme["text_muted"]
 
-        # ---------------- 3. STATS ROW (NO EMPTY BOXES) ----------------
+        # 3. STATS ROW
         elif s.layout_type == "stats_row":
             m_items = list(s.metrics) if s.metrics else []
             default_metrics = [
@@ -435,15 +433,13 @@ def create_pptx_file(
                 pd.font.size = Pt(14)
                 pd.font.color.rgb = theme["text_muted"]
 
-        # ---------------- 4. SPLIT IMAGE LAYOUT (FIXED: NO OVERLAPPING DARK BOX) ----------------
+        # 4. SPLIT IMAGE LAYOUT
         elif s.layout_type == "split_image":
-            # Use user uploaded photo on the first visual slide, then fallback to API search
             current_bytes = custom_img_bytes if not custom_image_used else None
             img_io = fetch_image_secure(s.ai_image_prompt or s.title, current_bytes)
             if current_bytes and img_io:
                 custom_image_used = True
 
-            # If image exists, give text 6 inches; else full width 11.7 inches
             text_width = Inches(5.9) if img_io else Inches(11.7)
 
             tb = slide.shapes.add_textbox(Inches(0.8), Inches(1.9), text_width, Inches(4.5))
@@ -463,14 +459,13 @@ def create_pptx_file(
                 p.font.color.rgb = theme["text_main"]
                 p.space_after = Pt(16)
 
-            # Insert Image on the right without ANY overlapping box
             if img_io:
                 try:
                     slide.shapes.add_picture(img_io, Inches(7.1), Inches(1.9), width=Inches(5.4), height=Inches(4.3))
                 except Exception as e:
                     print(f"Error placing image: {e}")
 
-        # ---------------- 5. CLOSING SLIDE ----------------
+        # 5. CLOSING SLIDE
         elif s.layout_type == "closing":
             box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.0), Inches(1.9), Inches(11.3), Inches(4.3))
             box.fill.solid()
