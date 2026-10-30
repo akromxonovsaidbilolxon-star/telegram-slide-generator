@@ -1,5 +1,7 @@
 import os
+import io
 import asyncio
+import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -15,7 +17,10 @@ from pptx_generator import (
 )
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-session = AiohttpSession(timeout=60.0)
+
+# Total timeout (35s) must be larger than polling timeout (20s)
+client_timeout = aiohttp.ClientTimeout(total=35.0, connect=10.0, sock_read=30.0)
+session = AiohttpSession(timeout=client_timeout)
 bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
 
@@ -125,7 +130,7 @@ async def choose_express(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.edit_text(
         "📝 O'z rejangiz (REJA), shaxsiy rasmingiz yoki matnni yuboring.\n\n"
-        "Agar rasm qo'shmoqchi bo'lsangiz, rasmni hozir yuboring (izohiga rejangizni yozishingiz ham mumkin):\n\n"
+        "Rasm qo'shmoqchi bo'lsangiz, rasmni hozir yuboring (izohiga rejangizni ham kiritishingiz mumkin):\n\n"
         "Agar qo'shimchasiz davom etmoqchi bo'lsangiz, tugmani bosing:",
         reply_markup=get_skip_kb()
     )
@@ -214,7 +219,6 @@ async def skip_custom(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(Form.waiting_custom_content, F.photo)
 async def receive_custom_photo(message: types.Message, state: FSMContext):
-    # Download highest-res photo
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
     photo_stream = io.BytesIO()
@@ -282,9 +286,10 @@ async def run_generation(message: types.Message, state: FSMContext, custom_img_b
             pass
         await state.clear()
 
+# ----------------- APPLICATION ENTRYPOINT -----------------
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot, polling_timeout=30)
+    await dp.start_polling(bot, polling_timeout=20, handle_signals=False)
 
 if __name__ == "__main__":
     asyncio.run(main())
